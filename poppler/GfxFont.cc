@@ -56,6 +56,7 @@
 #include <cmath>
 #include <climits>
 #include <algorithm>
+#include <iostream>
 #include "goo/gmem.h"
 #include "Error.h"
 #include "Object.h"
@@ -72,6 +73,7 @@
 #include <fofi/FoFiTrueType.h>
 #include "GfxFont.h"
 #include "PSOutputDev.h"
+#include <poppler/FreeTypeFontFace.h>
 
 //------------------------------------------------------------------------
 
@@ -943,6 +945,39 @@ static bool testForNumericNames(Dict *fontDict, bool hex)
     return numeric;
 }
 
+void Gfx8BitFont::initFreeTypeFontFace(XRef *xref)
+{
+    // A freeTypeFontFace has been constructed previously?  Don't do anything
+    if (freeTypeFontFace)
+        return;
+
+    // Construct a new FreeTypeFontFace object
+    char *tmpBuf = nullptr;
+    int tmpBufLen = 0;
+
+    std::optional<GfxFontLoc> fontLoc = locateFont(xref, nullptr);
+    if (!fontLoc) {
+        error(errSyntaxError, -1, "Couldn't find a font for '{0:s}'", getName() ? getName()->c_str() : "(unnamed)");
+        return;
+    }
+
+    // embedded font
+    if (fontLoc->locType == gfxFontLocEmbedded) {
+        // TD: if we have an embedded font, everything's perfect, we don't need to gather metrics manually at all?
+        tmpBuf = readEmbFontFile(xref, &tmpBufLen);
+        if (!tmpBuf) {
+            return;
+        }
+        freeTypeFontFace = std::make_unique<FreeTypeFontFace>(this, tmpBuf, tmpBufLen);
+
+        // external font
+    } else { // gfxFontLocExternal
+        std::string fileName = fontLoc->path;
+        std::cout << "filename is " << fileName << std::endl;
+        freeTypeFontFace = std::make_unique<FreeTypeFontFace>(this, fileName);
+    }
+}
+
 Gfx8BitFont::Gfx8BitFont(XRef *xref, const char *tagA, Ref idA, std::optional<std::string> &&nameA, GfxFontType typeA, Ref embFontIDA, Dict *fontDict) : GfxFont(tagA, idA, std::move(nameA), typeA, embFontIDA)
 {
     const BuiltinFont *builtinFont;
@@ -1359,6 +1394,20 @@ Gfx8BitFont::Gfx8BitFont(XRef *xref, const char *tagA, Ref idA, std::optional<st
 
         // couldn't find widths -- use defaults
     } else {
+        std::cout << "Use default fonts" << std::endl;
+
+        // Try to get glyph widths from FreeType
+        initFreeTypeFontFace(xref);
+        if (freeTypeFontFace) {
+            auto freeTypeWidths = freeTypeFontFace->getFontMetrics();
+            std::copy(freeTypeWidths.begin(), freeTypeWidths.end(), widths);
+
+            ok = true;
+            return;
+        }
+
+        // Getting glyph widths from FreeType failed -- fall back to default values
+
         // this is technically an error -- the Widths entry is required
         // for all but the Base-14 fonts -- but certain PDF generators
         // apparently don't include widths for Arial and TimesNewRoman
