@@ -93,8 +93,31 @@ FreeTypeFontFace::~FreeTypeFontFace()
 
 std::vector<double> FreeTypeFontFace::getFontMetrics() const
 {
+    int *codeToGID = (int *)gmallocn(256, sizeof(int));
+    switch (gfxFont->getType()) {
+    case fontType1:
+    case fontType1C:
+    case fontType1COT: {
+        const char *name;
+
+        for (int i = 0; i < 256; ++i) {
+            codeToGID[i] = 0;
+            if ((name = ((const char **)((Gfx8BitFont *)gfxFont)->getEncoding())[i])) {
+                codeToGID[i] = (int)FT_Get_Name_Index(ftFace, (char *)name);
+                if (codeToGID[i] == 0) {
+                    name = GfxFont::getAlternateName(name);
+                    if (name) {
+                        codeToGID[i] = FT_Get_Name_Index(ftFace, (char *)name);
+                    }
+                }
+            }
+        }
+    } break;
+    default:
+        error(errInternal, -1, "Font type not supported!");
+    }
+
     std::vector<double> freeTypeWidths(256);
-    int *codeToGID = gfxFont->getCodeToGIDMap(ff.get());
 
     for (int c = 0; c < 256; c++) {
         FT_UInt gid;
