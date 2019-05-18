@@ -1379,6 +1379,18 @@ Gfx8BitFont::Gfx8BitFont(XRef *xref, const char *tagA, Ref idA, std::optional<st
             }
         }
 
+        // Overwrite glyph widths with the values obtained from FreeType
+        // TODO: The code right in front of this is partially obsolete,
+        //       because the 'width' values are overwritten anyway.
+        initFreeTypeFontFace(xref);
+        if (freeTypeFontFace) {
+            auto freeTypeWidths = freeTypeFontFace->getFontMetrics();
+            std::copy(freeTypeWidths.begin(), freeTypeWidths.end(), widths);
+
+            ok = true;
+            return;
+        }
+
         // use widths from built-in font
     } else if (builtinFont) {
         // this is a kludge for broken PDF files that encode char 32
