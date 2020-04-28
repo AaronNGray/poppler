@@ -7,6 +7,16 @@ include_directories(
   ${CMAKE_CURRENT_BINARY_DIR}/../src
 )
 
+if (HAVE_CAIRO)
+  include_directories(${CAIRO_INCLUDE_DIRS})
+  add_definitions(${CAIRO_CFLAGS})
+endif (HAVE_CAIRO)
+
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${Qt5Core_EXECUTABLE_COMPILE_FLAGS}")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${Qt5Gui_EXECUTABLE_COMPILE_FLAGS}")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${Qt5Xml_EXECUTABLE_COMPILE_FLAGS}")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${Qt5Widgets_EXECUTABLE_COMPILE_FLAGS}")
+
 macro(QT5_ADD_SIMPLETEST exe source)
   string(REPLACE "-" "" test_name ${exe})
   set(${test_name}_SOURCES

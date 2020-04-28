@@ -23,6 +23,7 @@ void TestStrokeOpacity::checkStrokeOpacity_data()
 
     QTest::newRow("splash") << (int)Poppler::Document::SplashBackend;
     QTest::newRow("qpainter") << (int)Poppler::Document::QPainterBackend;
+    QTest::newRow("cairo") << (int)Poppler::Document::CairoBackend;
 }
 
 void TestStrokeOpacity::checkStrokeOpacity()
