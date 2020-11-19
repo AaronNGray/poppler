@@ -73,7 +73,6 @@ FreeTypeFontFace::FreeTypeFontFace(Gfx8BitFont *gf, const char *buffer, int buff
     std::cout << "   ... number of glyphs: " << ftFace->num_glyphs << std::endl;
 
     // TODO: Set this to something reasonable
-    // TODO: Error handling
     ftError = FT_Set_Char_Size(ftFace, /* handle to face object           */
                                0, /* char_width in 1/64th of points, 0 means: same as height  */
                                16 * 64, /* char_height in 1/64th of points */
