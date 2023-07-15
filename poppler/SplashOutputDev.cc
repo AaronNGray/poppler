@@ -2757,11 +2757,14 @@ struct SplashOutImageData
 };
 
 #ifdef USE_CMS
-bool SplashOutputDev::useIccImageSrc(void *data)
+bool SplashOutputDev::useIccImageSrc(void *data, SplashCoord *mat)
 {
     SplashOutImageData *imgData = (SplashOutImageData *)data;
 
     if (!imgData->lookup && imgData->colorMap->getColorSpace()->getMode() == csICCBased && imgData->colorMap->getBits() != 1) {
+        if ((int) ceilf(mat[0]) > imgData->width) {
+            return false;
+        }
         GfxICCBasedColorSpace *colorSpace = (GfxICCBasedColorSpace *)imgData->colorMap->getColorSpace();
         switch (imgData->colorMode) {
         case splashModeMono1:
@@ -3374,8 +3377,8 @@ void SplashOutputDev::drawImage(GfxState *state, Object *ref, Stream *str, int w
         srcMode = colorMode;
     }
 #ifdef USE_CMS
-    src = maskColors ? &alphaImageSrc : useIccImageSrc(&imgData) ? &iccImageSrc : &imageSrc;
-    tf = maskColors == nullptr && useIccImageSrc(&imgData) ? &iccTransform : nullptr;
+    src = maskColors ? &alphaImageSrc : useIccImageSrc(&imgData, mat) ? &iccImageSrc : &imageSrc;
+    tf = maskColors == nullptr && useIccImageSrc(&imgData, mat) ? &iccTransform : nullptr;
 #else
     src = maskColors ? &alphaImageSrc : &imageSrc;
     tf = nullptr;

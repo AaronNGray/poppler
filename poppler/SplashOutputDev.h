@@ -363,7 +363,7 @@ private:
     SplashPath convertPath(GfxState *state, const GfxPath *path, bool dropEmptySubpaths);
     void drawType3Glyph(GfxState *state, T3FontCache *t3Font, T3FontCacheTag *tag, unsigned char *data);
 #ifdef USE_CMS
-    bool useIccImageSrc(void *data);
+    bool useIccImageSrc(void *data, SplashCoord *mat);
     static void iccTransform(void *data, SplashBitmap *bitmap);
     static bool iccImageSrc(void *data, SplashColorPtr colorLine, unsigned char *alphaLine);
 #endif
