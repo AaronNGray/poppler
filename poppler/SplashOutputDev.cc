@@ -2762,7 +2762,7 @@ bool SplashOutputDev::useIccImageSrc(void *data, SplashCoord *mat)
     SplashOutImageData *imgData = (SplashOutImageData *)data;
 
     if (!imgData->lookup && imgData->colorMap->getColorSpace()->getMode() == csICCBased && imgData->colorMap->getBits() != 1) {
-        if ((int) ceilf(mat[0]) > imgData->width) {
+        if ((int)ceilf(mat[0]) > imgData->width) {
             return false;
         }
         GfxICCBasedColorSpace *colorSpace = (GfxICCBasedColorSpace *)imgData->colorMap->getColorSpace();
