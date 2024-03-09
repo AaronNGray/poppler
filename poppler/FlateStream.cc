@@ -19,17 +19,8 @@
 
 #    include "FlateStream.h"
 
-FlateStream::FlateStream(Stream *strA, int predictor, int columns, int colors, int bits) : FilterStream(strA)
+FlateStream::FlateStream(Stream *strA, int columns, int colors, int bits) : FilterStream(strA)
 {
-    if (predictor != 1) {
-        pred = new StreamPredictor(this, predictor, columns, colors, bits);
-        if (!pred->isOk()) {
-            delete pred;
-            pred = nullptr;
-        }
-    } else {
-        pred = NULL;
-    }
     out_pos = 0;
     memset(&d_stream, 0, sizeof(d_stream));
     inflateInit(&d_stream);
@@ -59,34 +50,26 @@ void FlateStream::reset()
     out_buf_len = 0;
 }
 
-int FlateStream::getRawChar()
-{
-    return doGetRawChar();
-}
-
-void FlateStream::getRawChars(int nChars, int *buffer)
-{
-    for (int i = 0; i < nChars; ++i)
-        buffer[i] = doGetRawChar();
-}
-
 int FlateStream::getChar()
 {
-    if (pred)
-        return pred->getChar();
-    else
-        return getRawChar();
+    return getRawChar();
 }
 
 int FlateStream::lookChar()
 {
-    if (pred)
-        return pred->lookChar();
-
     if (fill_buffer())
         return EOF;
 
     return out_buf[out_pos];
+}
+
+int FlateStream::getChars(int nChars, unsigned *buffer) {
+    int c;
+    int i;
+    for (i = 0; i < nChars && (c = doGetRawChar()) != EOF; ++i) {
+        buffer[i] = c;
+    }
+    return i;
 }
 
 int FlateStream::fill_buffer()

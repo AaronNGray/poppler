@@ -29,7 +29,7 @@ struct JPXStreamPrivate
     int npixels = 0;
     int ncomps = 0;
     bool inited = false;
-    void init2(OPJ_CODEC_FORMAT format, const unsigned char *buf, int length, bool indexed);
+    void init2(OPJ_CODEC_FORMAT format, const unsigned char *data, int length, bool indexed);
 };
 
 static inline unsigned char adjustComp(int r, int adjust, int depth, int sgndcorr, bool indexed)
@@ -255,8 +255,8 @@ void JPXStream::init()
     }
 
     const int smaskInData = smaskInDataObj.isInt() ? smaskInDataObj.getInt() : 0;
-    const std::vector<unsigned char> buf = str->toUnsignedChars(bufSize);
-    priv->init2(OPJ_CODEC_JP2, buf.data(), buf.size(), indexed);
+    const std::vector<unsigned char> data = str->toUnsignedChars(bufSize);
+    priv->init2(OPJ_CODEC_JP2, data.data(), data.size(), indexed);
 
     if (priv->image) {
         int numComps = priv->image->numcomps;
@@ -316,11 +316,11 @@ void JPXStream::init()
     priv->inited = true;
 }
 
-void JPXStreamPrivate::init2(OPJ_CODEC_FORMAT format, const unsigned char *buf, int length, bool indexed)
+void JPXStreamPrivate::init2(OPJ_CODEC_FORMAT format, const unsigned char *data, int length, bool indexed)
 {
     JPXData jpxData;
 
-    jpxData.data = buf;
+    jpxData.data = data;
     jpxData.pos = 0;
     jpxData.size = length;
 
@@ -397,10 +397,10 @@ error:
     opj_destroy_codec(decoder);
     if (format == OPJ_CODEC_JP2) {
         error(errSyntaxWarning, -1, "Did no succeed opening JPX Stream as JP2, trying as J2K.");
-        init2(OPJ_CODEC_J2K, buf, length, indexed);
+        init2(OPJ_CODEC_J2K, data, length, indexed);
     } else if (format == OPJ_CODEC_J2K) {
         error(errSyntaxWarning, -1, "Did no succeed opening JPX Stream as J2K, trying as JPT.");
-        init2(OPJ_CODEC_JPT, buf, length, indexed);
+        init2(OPJ_CODEC_JPT, data, length, indexed);
     } else {
         error(errSyntaxError, -1, "Did no succeed opening JPX Stream.");
     }

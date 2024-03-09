@@ -96,20 +96,7 @@ static bool setDJSYSFLAGS = false;
 // Stream (base class)
 //------------------------------------------------------------------------
 
-Stream::Stream()
-{
-    ref = 1;
-}
-
-Stream::~Stream() = default;
-
 void Stream::close() { }
-
-int Stream::getRawChar()
-{
-    error(errInternal, -1, "Internal: called getRawChar() on non-predictor stream");
-    return EOF;
-}
 
 int Stream::getChars(int nChars, unsigned char *buffer)
 {
@@ -117,12 +104,7 @@ int Stream::getChars(int nChars, unsigned char *buffer)
     return 0;
 }
 
-void Stream::getRawChars(int nChars, int *buffer)
-{
-    error(errInternal, -1, "Internal: called getRawChars() on non-predictor stream");
-}
-
-char *Stream::getLine(char *buf, int size)
+char *Stream::getLine(char *dest, int size)
 {
     int i;
     int c;
@@ -141,29 +123,20 @@ char *Stream::getLine(char *buf, int size)
             }
             break;
         }
-        buf[i] = c;
+        dest[i] = c;
     }
-    buf[i] = '\0';
-    return buf;
+    dest[i] = '\0';
+    return dest;
 }
 
 unsigned int Stream::discardChars(unsigned int n)
 {
-    unsigned char buf[4096];
-    unsigned int count, i, j;
-
-    count = 0;
-    while (count < n) {
-        if ((i = n - count) > sizeof(buf)) {
-            i = (unsigned int)sizeof(buf);
-        }
-        j = (unsigned int)doGetChars((int)i, buf);
-        count += j;
-        if (j != i) {
-            break;
-        }
+    unsigned got = 0;
+    while (got < n && lookChar() != EOF) {
+        getChar();
+        got++;
     }
-    return count;
+    return got;
 }
 
 GooString *Stream::getPSFilter(int psLevel, const char *indent)
@@ -300,7 +273,8 @@ Stream *Stream::makeFilter(const char *name, Stream *str, Object *params, int re
                 early = obj.getInt();
             }
         }
-        str = new LZWStream(str, pred, columns, colors, bits, early);
+        LZWStream *s = new LZWStream(str, columns, colors, bits, early);
+        str = s->asPredictedStream(pred, columns, colors, bits);
     } else if (!strcmp(name, "RunLengthDecode") || !strcmp(name, "RL")) {
         str = new RunLengthStream(str);
     } else if (!strcmp(name, "CCITTFaxDecode") || !strcmp(name, "CCF")) {
@@ -384,7 +358,8 @@ Stream *Stream::makeFilter(const char *name, Stream *str, Object *params, int re
                 bits = obj.getInt();
             }
         }
-        str = new FlateStream(str, pred, columns, colors, bits);
+        FlateStream *s = new FlateStream(str, columns, colors, bits);
+        str = s->asPredictedStream(pred, columns, colors, bits);
     } else if (!strcmp(name, "JBIG2Decode")) {
         Object globals;
         if (params->isDict()) {
@@ -591,6 +566,17 @@ void FilterStream::setPos(Goffset pos, int dir)
     error(errInternal, -1, "Internal: called setPos() on FilterStream");
 }
 
+
+Stream *FilterStream::asPredictedStream(int predictor, int columns, int colors, int bits) {
+    if (predictor == 1)
+        return this;
+    auto *pred = new StreamPredictor(this, predictor, columns, colors, bits);
+    if (!pred->isOk()) {
+        delete pred;
+        return this;
+    }
+    return pred;
+}
 //------------------------------------------------------------------------
 // ImageStream
 //------------------------------------------------------------------------
@@ -724,9 +710,8 @@ void ImageStream::skipLine()
 // StreamPredictor
 //------------------------------------------------------------------------
 
-StreamPredictor::StreamPredictor(Stream *strA, int predictorA, int widthA, int nCompsA, int nBitsA)
+StreamPredictor::StreamPredictor(Stream *strA, int predictorA, int widthA, int nCompsA, int nBitsA) : FilterStream(strA)
 {
-    str = strA;
     predictor = predictorA;
     width = widthA;
     nComps = nCompsA;
@@ -752,6 +737,7 @@ StreamPredictor::StreamPredictor(Stream *strA, int predictorA, int widthA, int n
 StreamPredictor::~StreamPredictor()
 {
     gfree(predLine);
+    delete str;
 }
 
 int StreamPredictor::lookChar()
@@ -808,7 +794,7 @@ bool StreamPredictor::getNextLine()
 
     // get PNG optimum predictor number
     if (predictor >= 10) {
-        if ((curPred = str->getRawChar()) == EOF) {
+        if ((curPred = str->getChar()) == EOF) {
             return false;
         }
         curPred += 10;
@@ -817,24 +803,26 @@ bool StreamPredictor::getNextLine()
     }
 
     // read the raw line, apply PNG (byte) predictor
-    int *rawCharLine = new int[rowBytes - pixBytes];
-    str->getRawChars(rowBytes - pixBytes, rawCharLine);
+    unsigned char *rawCharLine = new unsigned char[rowBytes - pixBytes];
+    int got = str->doGetChars(rowBytes - pixBytes, rawCharLine);
+    int actualRowBytes = rowBytes;
+    if (got < rowBytes - pixBytes) {
+        if (got == 0) {
+            delete[] rawCharLine;
+            return false;
+        }
+        // ought to always return false, but some (broken) PDF files
+        // contain truncated image data, and Adobe apparently reads the
+        // last partial line
+        actualRowBytes = pixBytes + got;
+    }
     memset(upLeftBuf, 0, pixBytes + 1);
-    for (i = pixBytes; i < rowBytes; ++i) {
+    for (i = pixBytes; i < actualRowBytes; ++i) {
         for (j = pixBytes; j > 0; --j) {
             upLeftBuf[j] = upLeftBuf[j - 1];
         }
         upLeftBuf[0] = predLine[i];
-        if ((c = rawCharLine[i - pixBytes]) == EOF) {
-            if (i > pixBytes) {
-                // this ought to return false, but some (broken) PDF files
-                // contain truncated image data, and Adobe apparently reads the
-                // last partial line
-                break;
-            }
-            delete[] rawCharLine;
-            return false;
-        }
+        c = rawCharLine[i - pixBytes];
         switch (curPred) {
         case 11: // PNG sub
             predLine[i] = predLine[i - pixBytes] + (unsigned char)c;
@@ -923,6 +911,11 @@ bool StreamPredictor::getNextLine()
     predIdx = pixBytes;
 
     return true;
+}
+
+void StreamPredictor::setPos(Goffset pos, int dir)
+{
+    error(errInternal, -1, "Internal: called setPos() on StreamPredictor");
 }
 
 //------------------------------------------------------------------------
@@ -1508,17 +1501,8 @@ bool ASCII85Stream::isBinary(bool last) const
 // LZWStream
 //------------------------------------------------------------------------
 
-LZWStream::LZWStream(Stream *strA, int predictor, int columns, int colors, int bits, int earlyA) : FilterStream(strA)
+LZWStream::LZWStream(Stream *strA, int columns, int colors, int bits, int earlyA) : FilterStream(strA)
 {
-    if (predictor != 1) {
-        pred = new StreamPredictor(this, predictor, columns, colors, bits);
-        if (!pred->isOk()) {
-            delete pred;
-            pred = nullptr;
-        }
-    } else {
-        pred = nullptr;
-    }
     early = earlyA;
     eof = false;
     inputBits = 0;
@@ -1527,15 +1511,11 @@ LZWStream::LZWStream(Stream *strA, int predictor, int columns, int colors, int b
 
 LZWStream::~LZWStream()
 {
-    delete pred;
     delete str;
 }
 
 int LZWStream::getChar()
 {
-    if (pred) {
-        return pred->getChar();
-    }
     if (eof) {
         return EOF;
     }
@@ -1549,9 +1529,6 @@ int LZWStream::getChar()
 
 int LZWStream::lookChar()
 {
-    if (pred) {
-        return pred->lookChar();
-    }
     if (eof) {
         return EOF;
     }
@@ -1563,25 +1540,11 @@ int LZWStream::lookChar()
     return seqBuf[seqIndex];
 }
 
-void LZWStream::getRawChars(int nChars, int *buffer)
-{
-    for (int i = 0; i < nChars; ++i) {
-        buffer[i] = doGetRawChar();
-    }
-}
-
-int LZWStream::getRawChar()
-{
-    return doGetRawChar();
-}
 
 int LZWStream::getChars(int nChars, unsigned char *buffer)
 {
     int n, m;
 
-    if (pred) {
-        return pred->getChars(nChars, buffer);
-    }
     if (eof) {
         return 0;
     }
@@ -1710,7 +1673,7 @@ GooString *LZWStream::getPSFilter(int psLevel, const char *indent)
 {
     GooString *s;
 
-    if (psLevel < 2 || pred) {
+    if (psLevel < 2) {
         return nullptr;
     }
     if (!(s = str->getPSFilter(psLevel, indent))) {
@@ -4151,17 +4114,8 @@ static const FlateCode flateFixedDistCodeTabCodes[32] = { { 5, 0x0000 }, { 5, 0x
 
 FlateHuffmanTab FlateStream::fixedDistCodeTab = { flateFixedDistCodeTabCodes, 5 };
 
-FlateStream::FlateStream(Stream *strA, int predictor, int columns, int colors, int bits) : FilterStream(strA)
+FlateStream::FlateStream(Stream *strA, int columns, int colors, int bits) : FilterStream(strA)
 {
-    if (predictor != 1) {
-        pred = new StreamPredictor(this, predictor, columns, colors, bits);
-        if (!pred->isOk()) {
-            delete pred;
-            pred = nullptr;
-        }
-    } else {
-        pred = nullptr;
-    }
     litCodeTab.codes = nullptr;
     distCodeTab.codes = nullptr;
     memset(buf, 0, flateWindow);
@@ -4175,7 +4129,6 @@ FlateStream::~FlateStream()
     if (distCodeTab.codes != fixedDistCodeTab.codes) {
         gfree(const_cast<FlateCode *>(distCodeTab.codes));
     }
-    delete pred;
     delete str;
 }
 
@@ -4233,36 +4186,12 @@ void FlateStream::reset()
 
 int FlateStream::getChar()
 {
-    if (pred) {
-        return pred->getChar();
-    }
     return doGetRawChar();
 }
-
-int FlateStream::getChars(int nChars, unsigned char *buffer)
-{
-    if (pred) {
-        return pred->getChars(nChars, buffer);
-    } else {
-        for (int i = 0; i < nChars; ++i) {
-            const int c = doGetRawChar();
-            if (likely(c != EOF)) {
-                buffer[i] = c;
-            } else {
-                return i;
-            }
-        }
-        return nChars;
-    }
-}
-
 int FlateStream::lookChar()
 {
     int c;
 
-    if (pred) {
-        return pred->lookChar();
-    }
     while (remain == 0) {
         if (endOfBlock && eof) {
             return EOF;
@@ -4273,23 +4202,21 @@ int FlateStream::lookChar()
     return c;
 }
 
-void FlateStream::getRawChars(int nChars, int *buffer)
+int FlateStream::getChars(int nChars, unsigned char *buffer)
 {
-    for (int i = 0; i < nChars; ++i) {
-        buffer[i] = doGetRawChar();
+    int c;
+    int i;
+    for (i = 0; i < nChars && (c = doGetRawChar()) != EOF; ++i) {
+        buffer[i] = c;
     }
-}
-
-int FlateStream::getRawChar()
-{
-    return doGetRawChar();
+    return i;
 }
 
 GooString *FlateStream::getPSFilter(int psLevel, const char *indent)
 {
     GooString *s;
 
-    if (psLevel < 3 || pred) {
+    if (psLevel < 3) {
         return nullptr;
     }
     if (!(s = str->getPSFilter(psLevel, indent))) {

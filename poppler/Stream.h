@@ -110,14 +110,16 @@ typedef struct _ByteRange
 // Stream (base class)
 //------------------------------------------------------------------------
 
+#define streamBufSize 8096
+
 class POPPLER_PRIVATE_EXPORT Stream
 {
 public:
     // Constructor.
-    Stream();
+    Stream() : ref(1), bufPtr(buf), bufEnd(buf) {}
 
     // Destructor.
-    virtual ~Stream();
+    virtual ~Stream() = default;
 
     Stream(const Stream &) = delete;
     Stream &operator=(const Stream &other) = delete;
@@ -131,20 +133,26 @@ public:
     // Close down the stream.
     virtual void close();
 
-    inline int doGetChars(int nChars, unsigned char *buffer)
-    {
-        if (hasGetChars()) {
-            return getChars(nChars, buffer);
+    virtual int getChar() { return (bufPtr >= bufEnd && !fillCacheBuf()) ? EOF : (*bufPtr++ & 0xff); }
+    virtual int lookChar() { return (bufPtr >= bufEnd && !fillCacheBuf()) ? EOF : (*bufPtr & 0xff); }
+
+    virtual bool hasGetChars() { return false; }
+
+    // Rename to getChars
+    inline int doGetChars(int nchars, unsigned char *buffer) {
+        int got = bufEnd - bufPtr;
+        if (nchars <= got)  {
+            memcpy(buffer, bufPtr, nchars);
+            bufPtr += nchars;
+            return nchars;
         } else {
-            for (int i = 0; i < nChars; ++i) {
-                const int c = getChar();
-                if (likely(c != EOF)) {
-                    buffer[i] = c;
-                } else {
-                    return i;
-                }
+            memcpy(buffer, bufPtr, got);
+            bufPtr = bufEnd;
+            int added = 0;
+            while ((added = getChars(nchars - got, buffer + got)) != 0) {
+                got += added;
             }
-            return nChars;
+            return got;
         }
     }
 
@@ -162,7 +170,7 @@ public:
 
     inline std::vector<unsigned char> toUnsignedChars(int initialSize = 4096, int sizeIncrement = 4096)
     {
-        std::vector<unsigned char> buf(initialSize);
+        std::vector<unsigned char> res(initialSize);
 
         int readChars;
         int size = initialSize;
@@ -170,7 +178,7 @@ public:
         int charsToRead = initialSize;
         bool continueReading = true;
         reset();
-        while (continueReading && (readChars = doGetChars(charsToRead, buf.data() + length)) != 0) {
+        while (continueReading && (readChars = doGetChars(charsToRead, res.data() + length)) != 0) {
             length += readChars;
             if (readChars == charsToRead) {
                 if (lookChar() != EOF) {
@@ -179,11 +187,11 @@ public:
                         return {};
                     }
                     charsToRead = sizeIncrement;
-                    if (unlikely(static_cast<size_t>(size) > buf.max_size())) {
+                    if (unlikely(static_cast<size_t>(size) > res.max_size())) {
                         error(errInternal, -1, "toUnsignedChars size grew too much");
                         return {};
                     }
-                    buf.resize(size);
+                    res.resize(size);
                 } else {
                     continueReading = false;
                 }
@@ -192,20 +200,9 @@ public:
             }
         }
 
-        buf.resize(length);
-        return buf;
+        res.resize(length);
+        return res;
     }
-
-    // Get next char from stream.
-    virtual int getChar() = 0;
-
-    // Peek at next char in stream.
-    virtual int lookChar() = 0;
-
-    // Get next char from stream without using the predictor.
-    // This is only used by StreamPredictor.
-    virtual int getRawChar();
-    virtual void getRawChars(int nChars, int *buffer);
 
     // Get next char directly from stream source, without filtering it
     virtual int getUnfilteredChar() = 0;
@@ -271,12 +268,29 @@ private:
     int incRef() { return ++ref; }
     int decRef() { return --ref; }
 
-    virtual bool hasGetChars() { return false; }
+    bool fillCacheBuf() {
+        assert(bufPtr == bufEnd);
+        bufPtr = buf;
+        bufEnd = bufPtr + getChars(streamBufSize, buf);
+        return bufEnd > bufPtr;
+    }
+
+    // May always return less than nChars, only a return of 0 indicates an EOF.
+    // Rename to getSomeChars
     virtual int getChars(int nChars, unsigned char *buffer);
 
     Stream *makeFilter(const char *name, Stream *str, Object *params, int recursion = 0, Dict *dict = nullptr);
 
     std::atomic_int ref; // reference count
+
+protected:
+    unsigned char buf[streamBufSize];
+    unsigned char *bufPtr = nullptr;
+    unsigned char *bufEnd = nullptr;
+
+    void purgeBuffer() {
+        bufPtr = bufEnd = buf;
+    }
 };
 
 //------------------------------------------------------------------------
@@ -429,6 +443,9 @@ private:
 class FilterStream : public Stream
 {
 public:
+    // If asPredictedStream returns a new object, that one then owns the previous one.
+    Stream *asPredictedStream(int predictor, int columns, int colors, int bits);
+
     explicit FilterStream(Stream *strA);
     ~FilterStream() override;
     void close() override;
@@ -497,28 +514,38 @@ private:
 // StreamPredictor
 //------------------------------------------------------------------------
 
-class StreamPredictor
+// In contrast to the normal FilterStream, the StreamPredictor owns its wrapped stream, mostly to make it compatible with the old callers.
+class StreamPredictor : public FilterStream
 {
 public:
+    StreamKind getKind() const override { return str->getKind(); }
+
     // Create a predictor object.  Note that the parameters are for the
     // predictor, and may not match the actual image parameters.
     StreamPredictor(Stream *strA, int predictorA, int widthA, int nCompsA, int nBitsA);
 
-    ~StreamPredictor();
+    ~StreamPredictor() override;
 
     StreamPredictor(const StreamPredictor &) = delete;
     StreamPredictor &operator=(const StreamPredictor &) = delete;
 
     bool isOk() { return ok; }
 
-    int lookChar();
-    int getChar();
-    int getChars(int nChars, unsigned char *buffer);
+    int lookChar() override;
+    int getChar() override;
+
+    Goffset getPos() override { return str->getPos(); }
+    void setPos(Goffset pos, int dir = 0) override;
+    void reset() override { str->reset(); }
+
+    bool isBinary(bool last = true) const override { return str->isBinary(last); };
 
 private:
+    bool hasGetChars() override { return true; }
+    int getChars(int nChars, unsigned char *buffer) override;
+
     bool getNextLine();
 
-    Stream *str; // base stream
     int predictor; // predictor
     int width; // pixels per line
     int nComps; // components per pixel
@@ -875,14 +902,12 @@ private:
 class LZWStream : public FilterStream
 {
 public:
-    LZWStream(Stream *strA, int predictor, int columns, int colors, int bits, int earlyA);
+    LZWStream(Stream *strA, int columns, int colors, int bits, int earlyA);
     ~LZWStream() override;
     StreamKind getKind() const override { return strLZW; }
     void reset() override;
     int getChar() override;
     int lookChar() override;
-    int getRawChar() override;
-    void getRawChars(int nChars, int *buffer) override;
     GooString *getPSFilter(int psLevel, const char *indent) override;
     bool isBinary(bool last = true) const override;
 
@@ -890,20 +915,6 @@ private:
     bool hasGetChars() override { return true; }
     int getChars(int nChars, unsigned char *buffer) override;
 
-    inline int doGetRawChar()
-    {
-        if (eof) {
-            return EOF;
-        }
-        if (seqIndex >= seqLength) {
-            if (!processNextCode()) {
-                return EOF;
-            }
-        }
-        return seqBuf[seqIndex++];
-    }
-
-    StreamPredictor *pred; // predictor
     int early; // early parameter
     bool eof; // true if at eof
     unsigned int inputBuf; // input buffer
@@ -1166,22 +1177,24 @@ struct FlateDecode
 class FlateStream : public FilterStream
 {
 public:
-    FlateStream(Stream *strA, int predictor, int columns, int colors, int bits);
+    FlateStream(Stream *strA, int columns, int colors, int bits);
     ~FlateStream() override;
     StreamKind getKind() const override { return strFlate; }
     void reset() override;
     int getChar() override;
     int lookChar() override;
-    int getRawChar() override;
-    void getRawChars(int nChars, int *buffer) override;
+
     GooString *getPSFilter(int psLevel, const char *indent) override;
     bool isBinary(bool last = true) const override;
     void unfilteredReset() override;
 
 private:
     void flateReset(bool unfiltered);
-    inline int doGetRawChar()
-    {
+
+    bool hasGetChars() override { return true; }
+    int getChars(int nChars, unsigned char *buffer) override;
+
+    inline int doGetRawChar() {
         int c;
 
         while (remain == 0) {
@@ -1196,10 +1209,6 @@ private:
         return c;
     }
 
-    bool hasGetChars() override { return true; }
-    int getChars(int nChars, unsigned char *buffer) override;
-
-    StreamPredictor *pred; // predictor
     unsigned char buf[flateWindow]; // output data buffer
     int index; // current index into output buffer
     int remain; // number valid bytes in output buffer
