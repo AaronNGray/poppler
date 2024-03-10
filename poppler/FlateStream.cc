@@ -21,7 +21,6 @@
 
 FlateStream::FlateStream(Stream *strA, int columns, int colors, int bits) : FilterStream(strA)
 {
-    out_pos = 0;
     memset(&d_stream, 0, sizeof(d_stream));
     inflateInit(&d_stream);
 }
@@ -45,59 +44,24 @@ void FlateStream::reset()
     str->reset();
     d_stream.avail_in = 0;
     status = Z_OK;
-    out_pos = 0;
-    out_buf_len = 0;
 }
 
 int FlateStream::getSomeChars(int nChars, unsigned char *buffer)
 {
-    int c;
-    int i;
-    for (i = 0; i < nChars && (c = doGetRawChar()) != EOF; ++i) {
-        buffer[i] = c;
-    }
-    return i;
-}
-
-int FlateStream::fill_buffer()
-{
-    /* only fill the buffer if it has all been used */
-    if (out_pos >= out_buf_len) {
-        /* check if the flatestream has been exhausted */
-        if (status == Z_STREAM_END) {
-            return -1;
-        }
-
-        /* set to the beginning of out_buf */
-        d_stream.avail_out = sizeof(out_buf);
-        d_stream.next_out = out_buf;
-        out_pos = 0;
-
-        while (1) {
-            /* buffer is empty so we need to fill it */
-            if (d_stream.avail_in == 0) {
-                int c;
-                /* read from the source stream */
-                while (d_stream.avail_in < sizeof(in_buf) && (c = str->getChar()) != EOF) {
-                    in_buf[d_stream.avail_in++] = c;
-                }
-                d_stream.next_in = in_buf;
-            }
-
-            /* keep decompressing until we can't anymore */
-            if (d_stream.avail_out == 0 || d_stream.avail_in == 0 || (status != Z_OK && status != Z_BUF_ERROR))
-                break;
-            status = inflate(&d_stream, Z_SYNC_FLUSH);
-        }
-
-        out_buf_len = sizeof(out_buf) - d_stream.avail_out;
-        if (status != Z_OK && status != Z_STREAM_END)
-            return -1;
-        if (!out_buf_len)
-            return -1;
+    if (status != Z_OK) {
+        return 0;
     }
 
-    return 0;
+    if (d_stream.avail_in == 0) {
+        d_stream.next_in = in_buf;
+        d_stream.avail_in = str->doGetChars(sizeof(in_buf), in_buf);
+    }
+
+    d_stream.avail_out = nChars;
+    d_stream.next_out = buffer;
+
+    status = inflate(&d_stream, Z_SYNC_FLUSH);
+    return nChars - d_stream.avail_out;
 }
 
 GooString *FlateStream::getPSFilter(int psLevel, const char *indent)

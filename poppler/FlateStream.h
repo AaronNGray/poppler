@@ -46,22 +46,9 @@ public:
     int getSomeChars(int nChars, unsigned char *buffer) override;
 
 private:
-    inline int doGetRawChar()
-    {
-        if (fill_buffer())
-            return EOF;
-
-        return out_buf[out_pos++];
-    }
-
-    int fill_buffer(void);
     z_stream d_stream;
     int status;
-    /* in_buf currently needs to be 1 or we over read from EmbedStreams */
-    unsigned char in_buf[1];
-    unsigned char out_buf[4096];
-    int out_pos;
-    int out_buf_len;
+    unsigned char in_buf[8192];
 };
 
 #endif
