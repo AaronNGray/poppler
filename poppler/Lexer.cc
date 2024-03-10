@@ -72,47 +72,51 @@ static const long long LongLongSafeLimit = (LLONG_MAX - 9) / 10;
 Lexer::Lexer(XRef *xrefA, Stream *str)
 {
     xref = xrefA;
+    nextStreamIdx = 1;
+
+    streams.push_back(Object(str));
 
     curStr = str;
-    strPtr = 0;
-    freeStream = false;
     curStr->reset();
 }
 
 Lexer::Lexer(XRef *xrefA, Object *obj)
 {
     xref = xrefA;
-    freeStream = false;
+    nextStreamIdx = 1;
 
     if (obj->isStream()) {
-        curStr = obj->getStream();
+        streams.push_back(obj->copy());
     } else {
         auto arr = obj->getArray();
-        for (int i = arr->getLength() - 1; i >= 0; i--) {
+        for (int i = 0; i < arr->getLength(); i++) {
             auto elem = arr->get(i);
-            if (elem.isStream())
-                streams.push_back(elem.getStream());
+            if (elem.isStream()) {
+                streams.push_back(std::move(elem));
+            }
         }
 
         if (streams.empty()) {
-            curStr = new EOFStream(nullptr);
-            freeStream = true;
-        } else {
-            curStr = streams.back();
-            streams.pop_back();
+            Stream *dummy = new EOFStream(nullptr);
+            streams.push_back(Object(dummy));
         }
     }
+    curStr = streams[0].getStream();
     curStr->reset();
 }
 
 Lexer::~Lexer()
 {
     curStr->close();
-    if (freeStream) {
-        delete curStr;
-    }
 }
 
+void Lexer::nextStream()
+{
+    curStr->close();
+    curStr = streams[nextStreamIdx].getStream();
+    nextStreamIdx++;
+    curStr->reset();
+}
 
 Object Lexer::getObj(int objNum)
 {

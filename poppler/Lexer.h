@@ -93,12 +93,10 @@ private:
         int c;
 
         while ((c = curStr->getChar()) == EOF) {
-            if (streams.empty()) {
+            if (nextStreamIdx == streams.size()) {
                 return EOF;
             }
-            curStr = streams.back();
-            curStr->reset();
-            streams.pop_back();
+            nextStream();
         }
         return c;
     }
@@ -108,21 +106,19 @@ private:
         int c;
 
         while ((c = curStr->lookChar()) == EOF) {
-            if (streams.empty()) {
+            if (nextStreamIdx == streams.size()) {
                 return EOF;
             }
-            curStr = streams.back();
-            curStr->reset();
-            streams.pop_back();
+            nextStream();
         }
         return c;
     }
+    void nextStream();
 
+    std::vector<Object> streams;
+    size_t nextStreamIdx;
+    Stream *curStr;
 
-    std::vector<Stream *> streams; // in reverse order: additional streams to concatenate after this one
-    int strPtr; // index of current stream
-    Stream *curStr; // current stream
-    bool freeStream;
     char tokBuf[tokBufSize]; // temporary token buffer
 
     XRef *xref;
