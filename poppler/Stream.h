@@ -152,8 +152,8 @@ public:
     // Close down the stream.
     virtual void close();
 
-    int getChar() { return (bufPtr >= bufEnd && !fillCacheBuf()) ? EOF : (*bufPtr++ & 0xff); }
-    int lookChar() { return (bufPtr >= bufEnd && !fillCacheBuf()) ? EOF : (*bufPtr & 0xff); }
+    inline int getChar() { return (bufPtr >= bufEnd && !fillCacheBuf()) ? EOF : (*bufPtr++ & 0xff); }
+    inline int lookChar() { return (bufPtr >= bufEnd && !fillCacheBuf()) ? EOF : (*bufPtr & 0xff); }
 
     // Rename to getChars
     inline int doGetChars(int nchars, unsigned char *buffer)

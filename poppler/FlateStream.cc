@@ -29,7 +29,6 @@ FlateStream::FlateStream(Stream *strA, int columns, int colors, int bits) : Filt
 FlateStream::~FlateStream()
 {
     inflateEnd(&d_stream);
-    delete pred;
     delete str;
 }
 
@@ -50,20 +49,7 @@ void FlateStream::reset()
     out_buf_len = 0;
 }
 
-int FlateStream::getChar()
-{
-    return getRawChar();
-}
-
-int FlateStream::lookChar()
-{
-    if (fill_buffer())
-        return EOF;
-
-    return out_buf[out_pos];
-}
-
-int FlateStream::getSomeChars(int nChars, unsigned *buffer)
+int FlateStream::getSomeChars(int nChars, unsigned char *buffer)
 {
     int c;
     int i;
@@ -118,7 +104,7 @@ GooString *FlateStream::getPSFilter(int psLevel, const char *indent)
 {
     GooString *s;
 
-    if (psLevel < 3 || pred) {
+    if (psLevel < 3) {
         return NULL;
     }
     if (!(s = str->getPSFilter(psLevel, indent))) {

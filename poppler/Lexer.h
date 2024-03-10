@@ -68,43 +68,61 @@ public:
     void skipChar() { getChar(); }
 
     // Get stream.
-    Stream *getStream() { return curStr.isStream() ? curStr.getStream() : nullptr; }
+    Stream *getStream() { return curStr; }
 
     // Get current position in file.  This is only used for error
     // messages.
-    Goffset getPos() const { return curStr.isStream() ? curStr.getStream()->getPos() : -1; }
+    Goffset getPos() const { return curStr->getKind() == strWeird ? -1 : curStr->getPos(); }
 
     // Set position in file.
     void setPos(Goffset pos)
     {
-        if (curStr.isStream()) {
-            curStr.getStream()->setPos(pos);
-        }
+        if (curStr->getKind() != strWeird)
+            curStr->setPos(pos);
     }
 
     // Returns true if <c> is a whitespace character.
     static bool isSpace(int c);
 
-    // often (e.g. ~30% on PDF Refernce 1.6 pdf file from Adobe site) getChar
-    // is called right after lookChar. In order to avoid expensive re-doing
-    // getChar() of underlying stream, we cache the last value found by
-    // lookChar() in lookCharLastValueCached. A special value
-    // LOOK_VALUE_NOT_CACHED that should never be part of stream indicates
-    // that no value was cached
-    static const int LOOK_VALUE_NOT_CACHED = -3;
-    int lookCharLastValueCached;
-
     XRef *getXRef() const { return xref; }
     bool hasXRef() const { return xref != nullptr; }
 
 private:
-    int getChar(bool comesFromLook = false);
-    int lookChar();
+    inline int getChar()
+    {
+        int c;
 
-    Array *streams; // array of input streams
+        while ((c = curStr->getChar()) == EOF) {
+            if (streams.empty()) {
+                return EOF;
+            }
+            curStr = streams.back();
+            curStr->reset();
+            streams.pop_back();
+        }
+        return c;
+    }
+
+    inline int lookChar()
+    {
+        int c;
+
+        while ((c = curStr->lookChar()) == EOF) {
+            if (streams.empty()) {
+                return EOF;
+            }
+            curStr = streams.back();
+            curStr->reset();
+            streams.pop_back();
+        }
+        return c;
+    }
+
+
+    std::vector<Stream *> streams; // in reverse order: additional streams to concatenate after this one
     int strPtr; // index of current stream
-    Object curStr; // current stream
-    bool freeArray; // should lexer free the streams array?
+    Stream *curStr; // current stream
+    bool freeStream;
     char tokBuf[tokBufSize]; // temporary token buffer
 
     XRef *xref;
