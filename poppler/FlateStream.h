@@ -45,10 +45,9 @@ public:
     GooString *getPSFilter(int psLevel, const char *indent) override;
     bool isBinary(bool last = true) const override;
 
-private:
-    bool hasGetChars() override { return true; }
-    int getChars(int nChars, unsigned *buffer) override;
+    int getSomeChars(int nChars, unsigned *buffer) override;
 
+private:
     inline int doGetRawChar()
     {
         if (fill_buffer())

@@ -983,13 +983,15 @@ public:
     ~DeviceNRecoder() override;
     StreamKind getKind() const override { return strWeird; }
     void reset() override;
-    int getChar() override { return (bufIdx >= bufSize && !fillBuf()) ? EOF : buf[bufIdx++]; }
-    int lookChar() override { return (bufIdx >= bufSize && !fillBuf()) ? EOF : buf[bufIdx]; }
     GooString *getPSFilter(int psLevel, const char *indent) override { return nullptr; }
     bool isBinary(bool last = true) const override { return true; }
     bool isEncoder() const override { return true; }
 
+    polyfillGetSomeChars(getRawChar);
+
 private:
+    int getRawChar() { return (bufIdx >= bufSize && !fillBuf()) ? EOF : buf[bufIdx++]; }
+
     bool fillBuf();
 
     int width, height;

@@ -63,7 +63,8 @@ int FlateStream::lookChar()
     return out_buf[out_pos];
 }
 
-int FlateStream::getChars(int nChars, unsigned *buffer) {
+int FlateStream::getSomeChars(int nChars, unsigned *buffer)
+{
     int c;
     int i;
     for (i = 0; i < nChars && (c = doGetRawChar()) != EOF; ++i) {

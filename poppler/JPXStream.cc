@@ -368,7 +368,7 @@ void JPXStream::close()
     bufStr->close();
 }
 
-int JPXStream::getChar()
+int JPXStream::getRawChar()
 {
     int c;
 
@@ -386,25 +386,6 @@ int JPXStream::getChar()
     } else {
         c = (readBuf << (8 - readBufLen)) & 0xff;
         readBufLen = 0;
-    }
-    return c;
-}
-
-int JPXStream::lookChar()
-{
-    int c;
-
-    if (readBufLen < 8) {
-        fillReadBuf();
-    }
-    if (readBufLen == 8) {
-        c = readBuf & 0xff;
-    } else if (readBufLen > 8) {
-        c = (readBuf >> (readBufLen - 8)) & 0xff;
-    } else if (readBufLen == 0) {
-        c = EOF;
-    } else {
-        c = (readBuf << (8 - readBufLen)) & 0xff;
     }
     return c;
 }

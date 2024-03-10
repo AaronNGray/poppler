@@ -36,8 +36,6 @@ public:
     void reset() override;
     void close() override;
     Goffset getPos() override;
-    int getChar() override;
-    int lookChar() override;
     GooString *getPSFilter(int psLevel, const char *indent) override;
     bool isBinary(bool last = true) const override;
     void getImageParams(int *bitsPerComponent, StreamColorSpaceMode *csMode, bool *hasAlpha) override;
@@ -49,14 +47,13 @@ public:
     bool supportJPXtransparency() { return handleJPXtransparency; }
 
     int readStream(int nChars, unsigned char *buffer) { return str->doGetChars(nChars, buffer); }
+    int getSomeChars(int nChars, unsigned char *buffer) override;
 
 private:
     JPXStreamPrivate *priv;
     bool handleJPXtransparency;
 
     void init();
-    bool hasGetChars() override { return true; }
-    int getChars(int nChars, unsigned char *buffer) override;
 };
 
 #endif

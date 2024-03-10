@@ -100,7 +100,7 @@ Goffset JPXStream::getPos()
     return priv->counter * priv->ncomps + priv->ccounter;
 }
 
-int JPXStream::getChars(int nChars, unsigned char *buffer)
+int JPXStream::getSomeChars(int nChars, unsigned char *buffer)
 {
     if (unlikely(priv->inited == false)) {
         init();
@@ -115,24 +115,6 @@ int JPXStream::getChars(int nChars, unsigned char *buffer)
         }
     }
     return nChars;
-}
-
-int JPXStream::getChar()
-{
-    if (unlikely(priv->inited == false)) {
-        init();
-    }
-
-    return doGetChar(priv);
-}
-
-int JPXStream::lookChar()
-{
-    if (unlikely(priv->inited == false)) {
-        init();
-    }
-
-    return doLookChar(priv);
 }
 
 GooString *JPXStream::getPSFilter(int psLevel, const char *indent)

@@ -44,13 +44,15 @@ public:
     ~FlateEncoder() override;
     StreamKind getKind() const override { return strWeird; }
     void reset() override;
-    int getChar() override { return (outBufPtr >= outBufEnd && !fillBuf()) ? EOF : (*outBufPtr++ & 0xff); }
-    int lookChar() override { return (outBufPtr >= outBufEnd && !fillBuf()) ? EOF : (*outBufPtr & 0xff); }
     GooString *getPSFilter(int psLevel, const char *indent) override { return nullptr; }
     bool isBinary(bool last = true) const override { return true; }
     bool isEncoder() const override { return true; }
 
+    polyfillGetSomeChars(getRawChar);
+
 private:
+    int getRawChar() { return (outBufPtr >= outBufEnd && !fillBuf()) ? EOF : (*outBufPtr++ & 0xff); }
+
     static const int inBufSize = 16384;
     static const int outBufSize = inBufSize;
     unsigned char inBuf[inBufSize];
