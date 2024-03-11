@@ -336,7 +336,6 @@ long ImageOutputDev::getInlineImageLength(Stream *str, int width, int height, Gf
 void ImageOutputDev::writeRawImage(Stream *str, const char *ext)
 {
     FILE *f;
-    int c;
 
     // open the image file
     setFilename(ext);
@@ -352,8 +351,13 @@ void ImageOutputDev::writeRawImage(Stream *str, const char *ext)
     str->reset();
 
     // copy the stream
-    while ((c = str->getChar()) != EOF) {
-        fputc(c, f);
+    while (true) {
+        int nChars;
+        unsigned char *data = str->getSomeBufferedChars(&nChars);
+        if (nChars == 0) {
+            break;
+        }
+        fwrite(data, 1, nChars, f);
     }
 
     str->close();

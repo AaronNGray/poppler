@@ -326,8 +326,6 @@ gboolean poppler_media_save_to_fd(PopplerMedia *poppler_media, int fd, GError **
 
 #endif /* !G_OS_WIN32 */
 
-#define BUF_SIZE 1024
-
 /**
  * poppler_media_save_to_callback:
  * @poppler_media: a #PopplerMedia
@@ -348,9 +346,7 @@ gboolean poppler_media_save_to_fd(PopplerMedia *poppler_media, int fd, GError **
 gboolean poppler_media_save_to_callback(PopplerMedia *poppler_media, PopplerMediaSaveFunc save_func, gpointer user_data, GError **error)
 {
     Stream *stream;
-    gchar buf[BUF_SIZE];
     int i;
-    gboolean eof_reached = FALSE;
 
     g_return_val_if_fail(POPPLER_IS_MEDIA(poppler_media), FALSE);
     g_return_val_if_fail(poppler_media->stream.isStream(), FALSE);
@@ -358,25 +354,16 @@ gboolean poppler_media_save_to_callback(PopplerMedia *poppler_media, PopplerMedi
     stream = poppler_media->stream.getStream();
     stream->reset();
 
-    do {
-        int data;
-
-        for (i = 0; i < BUF_SIZE; i++) {
-            data = stream->getChar();
-            if (data == EOF) {
-                eof_reached = TRUE;
-                break;
-            }
-            buf[i] = data;
+    while (true) {
+        auto chars = stream->getSomeBufferedChars(&i);
+        if (i == 0) {
+            return TRUE;
         }
-
-        if (i > 0) {
-            if (!(save_func)(buf, i, user_data, error)) {
-                stream->close();
-                return FALSE;
-            }
+        if (!(save_func)((gchar *) chars, i, user_data, error)) {
+            stream->close();
+            return FALSE;
         }
-    } while (!eof_reached);
+    }
 
     stream->close();
 

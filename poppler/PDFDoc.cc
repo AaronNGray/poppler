@@ -328,14 +328,7 @@ bool PDFDoc::checkFooter()
     char *eof = new char[1025];
     Goffset pos = str->getPos();
     str->setPos(1024, -1);
-    int i, ch;
-    for (i = 0; i < 1024; i++) {
-        ch = str->getChar();
-        if (ch == EOF) {
-            break;
-        }
-        eof[i] = ch;
-    }
+    int i = str->doGetChars(1024, (unsigned char *)eof);
     eof[i] = '\0';
 
     bool found = false;
