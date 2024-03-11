@@ -211,7 +211,6 @@ public:
     bool isBinary(bool last = true) const override { return str->getBaseStream()->isBinary(); }
     int getUnfilteredChar() override { return str->getBaseStream()->getUnfilteredChar(); }
     void unfilteredReset() override { str->getBaseStream()->unfilteredReset(); }
-    Goffset getPos() override { return str->getBaseStream()->getPos(); }
     void setPos(Goffset pos, int dir) override { str->getBaseStream()->setPos(pos, dir); }
     BaseStream *getBaseStream() override { return str->getBaseStream()->getBaseStream(); }
     Stream *getUndecodedStream() override { return str->getBaseStream()->getUndecodedStream(); }
@@ -219,6 +218,7 @@ public:
     Object *getDictObject() override { return str->getBaseStream()->getDictObject(); }
 
     int getSomeChars(int nChars, unsigned char *buffer) override { return str->getSomeChars(nChars, buffer); };
+    Goffset getRawPos() override { return str->getBaseStream()->getRawPos(); }
 
 private:
     std::unique_ptr<Stream> str;
@@ -455,7 +455,7 @@ void BaseSeekInputStream::reset()
     savePos = currentPos();
     setCurrentPos(start);
     saved = true;
-    bufPtr = bufEnd = buf;
+    purgeBuffer();
     bufPos = start;
 }
 
@@ -493,7 +493,9 @@ void BaseSeekInputStream::moveStart(Goffset delta)
 
 int BaseSeekInputStream::getSomeChars(int nChars, unsigned char *buffer)
 {
-    return read((char *)buffer, nChars);
+    Goffset got = read((char *)buffer, nChars);
+    bufPos += got;
+    return got;
 }
 
 //------------------------------------------------------------------------
@@ -859,7 +861,6 @@ FileStream::FileStream(GooFile *fileA, Goffset startA, bool limitedA, Goffset le
     offset = start = startA;
     limited = limitedA;
     length = lengthA;
-    bufPos = start;
     savePos = 0;
     saved = false;
     needsEncryptionOnSave = false;
@@ -886,7 +887,6 @@ void FileStream::reset()
     offset = start;
     saved = true;
     purgeBuffer();
-    bufPos = start;
 }
 
 void FileStream::close()
@@ -900,7 +900,7 @@ void FileStream::close()
 int FileStream::getSomeChars(int nChars, unsigned char *buffer)
 {
     if (limited) {
-        int max = start + length - bufPos;
+        int max = start + length - offset;
         if (nChars > max) {
             if (max == 0) {
                 return 0;
@@ -920,14 +920,13 @@ void FileStream::setPos(Goffset pos, int dir)
     Goffset size;
 
     if (dir >= 0) {
-        offset = bufPos = pos;
+        offset = pos;
     } else {
         size = file->size();
         if (pos > size) {
             pos = size;
         }
         offset = size - pos;
-        bufPos = offset;
     }
     purgeBuffer();
 }
@@ -935,8 +934,8 @@ void FileStream::setPos(Goffset pos, int dir)
 void FileStream::moveStart(Goffset delta)
 {
     start += delta;
+    offset = start;
     purgeBuffer();
-    bufPos = start;
 }
 
 //------------------------------------------------------------------------
@@ -1116,7 +1115,7 @@ void EmbedStream::restore()
     replay = false;
 }
 
-Goffset EmbedStream::getPos()
+Goffset EmbedStream::getRawPos()
 {
     if (replay) {
         return bufPos;
@@ -1141,6 +1140,7 @@ int EmbedStream::getSomeChars(int nChars, unsigned char *buffer)
             nChars = len;
         }
         memcpy(buffer, bufData, nChars);
+        bufPos += nChars;
         return len;
     } else {
         if (limited) {
@@ -4969,7 +4969,7 @@ bool SplashBitmapCMYKEncoder::fillBuf()
     return true;
 }
 
-Goffset SplashBitmapCMYKEncoder::getPos()
+Goffset SplashBitmapCMYKEncoder::getRawPos()
 {
     return (height - 1 - curLine) * width + bufPtr;
 }

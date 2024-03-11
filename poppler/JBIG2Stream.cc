@@ -1199,7 +1199,7 @@ void JBIG2Stream::close()
     FilterStream::close();
 }
 
-Goffset JBIG2Stream::getPos()
+Goffset JBIG2Stream::getRawPos()
 {
     if (pageBitmap == nullptr) {
         return 0;

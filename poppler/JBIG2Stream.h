@@ -50,7 +50,6 @@ public:
     StreamKind getKind() const override { return strJBIG2; }
     void reset() override;
     void close() override;
-    Goffset getPos() override;
 
     GooString *getPSFilter(int psLevel, const char *indent) override;
     bool isBinary(bool last = true) const override;
@@ -58,6 +57,7 @@ public:
     virtual Ref getGlobalsStreamRef() { return globalsStreamRef; }
 
     int getSomeChars(int nChars, unsigned char *buffer) override;
+    Goffset getRawPos() override;
 
 private:
     void readSegments();
