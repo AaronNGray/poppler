@@ -3492,10 +3492,7 @@ bool PSOutputDev::checkPageSlice(Page *page, double /*hDPI*/, double /*vDPI*/, i
             str->reset();
             if (useBinary) {
                 // Count the bytes to write a document comment
-                int len = 0;
-                while (str->getChar() != EOF) {
-                    len++;
-                }
+                int len = str->discardChars(INT_MAX);
                 str->reset();
                 writePSFmt("%%BeginData: {0:d} Binary Bytes\n", len + 6 + 1);
             }
@@ -5980,10 +5977,7 @@ void PSOutputDev::doImageL2(GfxState *state, Object *ref, GfxImageColorMap *colo
                 // need to read the stream to count characters -- the length
                 // is data-dependent (because of ASCII and LZW/RLE filters)
                 str->reset();
-                n = 0;
-                while ((c = str->getChar()) != EOF) {
-                    ++n;
-                }
+                n = str->discardChars(INT_MAX);
                 str->close();
             }
             // +6/7 for "pdfIm\n" / "pdfImM\n"

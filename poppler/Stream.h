@@ -135,7 +135,7 @@ class POPPLER_PRIVATE_EXPORT Stream
 {
 public:
     // Constructor.
-    Stream() : ref(1), bufPtr(buf), bufEnd(buf) { }
+    Stream() : ref(1), bufPtr(buf + streamBufSize), bufEnd(buf + streamBufSize) { }
 
     // Destructor.
     virtual ~Stream() = default;
@@ -155,7 +155,6 @@ public:
     inline int getChar() { return (bufPtr >= bufEnd && !fillCacheBuf()) ? EOF : (*bufPtr++ & 0xff); }
     inline int lookChar() { return (bufPtr >= bufEnd && !fillCacheBuf()) ? EOF : (*bufPtr & 0xff); }
 
-    // Rename to getChars
     inline int doGetChars(int nchars, unsigned char *buffer)
     {
         int got = bufEnd - bufPtr;
@@ -206,28 +205,22 @@ public:
         int size = initialSize;
         int length = 0;
         int charsToRead = initialSize;
-        bool continueReading = true;
         reset();
-        while (continueReading && (readChars = doGetChars(charsToRead, res.data() + length)) != 0) {
+        while ((readChars = doGetChars(charsToRead, res.data() + length)) != 0) {
             length += readChars;
-            if (readChars == charsToRead) {
-                if (lookChar() != EOF) {
-                    if (unlikely(checkedAdd(size, sizeIncrement, &size))) {
-                        error(errInternal, -1, "toUnsignedChars size grew too much");
-                        return {};
-                    }
-                    charsToRead = sizeIncrement;
-                    if (unlikely(static_cast<size_t>(size) > res.max_size())) {
-                        error(errInternal, -1, "toUnsignedChars size grew too much");
-                        return {};
-                    }
-                    res.resize(size);
-                } else {
-                    continueReading = false;
-                }
-            } else {
-                continueReading = false;
+            if (readChars < charsToRead)
+                break;
+            if (unlikely(checkedAdd(size, sizeIncrement, &size))) {
+                error(errInternal, -1, "toUnsignedChars size grew too much");
+                return {};
             }
+            size += sizeIncrement;
+            charsToRead = sizeIncrement;
+            if (unlikely(static_cast<size_t>(size) > res.max_size())) {
+                error(errInternal, -1, "toUnsignedChars size grew too much");
+                return {};
+            }
+            res.resize(size);
         }
 
         res.resize(length);
@@ -323,7 +316,9 @@ protected:
     unsigned char *bufPtr = nullptr;
     unsigned char *bufEnd = nullptr;
 
-    void purgeBuffer() { bufPtr = bufEnd = buf; }
+    void purgeBuffer() { bufPtr = bufEnd = buf + streamBufSize; }
+    // Used by EmbedStream to move unused buffered data back into its base.
+    void flushBackToParent(Stream *parent, int nChars, unsigned char *data);
 };
 
 //------------------------------------------------------------------------
@@ -841,6 +836,7 @@ public:
 
 private:
     int getRawChar();
+    bool eof;
 };
 
 //------------------------------------------------------------------------

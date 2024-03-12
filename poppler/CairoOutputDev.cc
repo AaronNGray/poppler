@@ -3081,12 +3081,10 @@ bool CairoOutputDev::getStreamData(Stream *str, char **buffer, int *length)
     int len;
     char *strBuffer;
 
-    len = 0;
     str->close();
     str->reset();
-    while (str->getChar() != EOF) {
-        len++;
-    }
+    len = str->discardChars(INT_MAX);
+
     if (len == 0) {
         return false;
     }

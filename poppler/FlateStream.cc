@@ -27,7 +27,9 @@ FlateStream::FlateStream(Stream *strA, int columns, int colors, int bits) : Filt
 
 FlateStream::~FlateStream()
 {
+    flushBackToParent(str, d_stream.avail_in, d_stream.next_in);
     inflateEnd(&d_stream);
+
     delete str;
 }
 
@@ -42,19 +44,25 @@ void FlateStream::reset()
     inflateInit(&d_stream);
 
     str->reset();
+    purgeBuffer();
     d_stream.avail_in = 0;
     status = Z_OK;
 }
 
 int FlateStream::getSomeChars(int nChars, unsigned char *buffer)
 {
-    if (status != Z_OK) {
+    // Z_BUF_ERROR happens if avail_in or avail_out is 0 and isn't fatal.
+    if (status != Z_OK && status != Z_BUF_ERROR) {
         return 0;
     }
 
     if (d_stream.avail_in == 0) {
         d_stream.next_in = in_buf;
         d_stream.avail_in = str->doGetChars(sizeof(in_buf), in_buf);
+        if (d_stream.avail_in == 0) {
+            status = Z_STREAM_END;
+            return 0;
+        }
     }
 
     d_stream.avail_out = nChars;

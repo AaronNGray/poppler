@@ -315,18 +315,13 @@ long ImageOutputDev::getInlineImageLength(Stream *str, int width, int height, Gf
         str->reset();
         for (int y = 0; y < height; y++) {
             int size = (width + 7) / 8;
-            for (int x = 0; x < size; x++) {
-                str->getChar();
-            }
+            str->discardChars(size);
         }
     }
 
     EmbedStream *embedStr = (EmbedStream *)(str->getBaseStream());
     embedStr->rewind();
-    len = 0;
-    while (embedStr->getChar() != EOF) {
-        len++;
-    }
+    len = embedStr->discardChars(INT_MAX);
 
     embedStr->restore();
 

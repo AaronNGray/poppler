@@ -72,14 +72,10 @@ public:
 
     // Get current position in file.  This is only used for error
     // messages.
-    Goffset getPos() const { return curStr->getKind() == strWeird ? -1 : curStr->getPos(); }
+    Goffset getPos() const { return curStr->getPos(); }
 
     // Set position in file.
-    void setPos(Goffset pos)
-    {
-        if (curStr->getKind() != strWeird)
-            curStr->setPos(pos);
-    }
+    void setPos(Goffset pos) { curStr->setPos(pos); }
 
     // Returns true if <c> is a whitespace character.
     static bool isSpace(int c);
@@ -101,18 +97,7 @@ private:
         return c;
     }
 
-    inline int lookChar()
-    {
-        int c;
-
-        while ((c = curStr->lookChar()) == EOF) {
-            if (nextStreamIdx == streams.size()) {
-                return EOF;
-            }
-            nextStream();
-        }
-        return c;
-    }
+    inline int lookChar() { return curStr->lookChar(); }
     void nextStream();
 
     std::vector<Object> streams;
