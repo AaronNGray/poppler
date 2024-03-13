@@ -359,7 +359,7 @@ gboolean poppler_media_save_to_callback(PopplerMedia *poppler_media, PopplerMedi
         if (i == 0) {
             return TRUE;
         }
-        if (!(save_func)((gchar *) chars, i, user_data, error)) {
+        if (!(save_func)((gchar *)chars, i, user_data, error)) {
             stream->close();
             return FALSE;
         }

@@ -175,8 +175,9 @@ public:
 
     unsigned char *getSomeBufferedChars(int *nCharsOut)
     {
-        if (bufPtr == bufEnd)
+        if (bufPtr == bufEnd) {
             fillCacheBuf();
+        }
         *nCharsOut = bufEnd - bufPtr;
         auto res = bufPtr;
         bufPtr = bufEnd;
@@ -189,8 +190,9 @@ public:
         reset();
         while (true) {
             auto chars = getSomeBufferedChars(&readChars);
-            if (readChars == 0)
+            if (readChars == 0) {
                 return;
+            }
             s.append((const char *)chars, readChars);
         }
     }
@@ -208,13 +210,13 @@ public:
         reset();
         while ((readChars = doGetChars(charsToRead, res.data() + length)) != 0) {
             length += readChars;
-            if (readChars < charsToRead)
+            if (readChars < charsToRead) {
                 break;
+            }
             if (unlikely(checkedAdd(size, sizeIncrement, &size))) {
                 error(errInternal, -1, "toUnsignedChars size grew too much");
                 return {};
             }
-            size += sizeIncrement;
             charsToRead = sizeIncrement;
             if (unlikely(static_cast<size_t>(size) > res.max_size())) {
                 error(errInternal, -1, "toUnsignedChars size grew too much");
@@ -236,7 +238,7 @@ public:
     virtual void unfilteredReset() = 0;
 
     // Get next line from stream.
-    virtual char *getLine(char *buf, int size);
+    virtual char *getLine(char *dest, int size);
 
     // Discard the next <n> bytes from stream.  Returns the number of
     // bytes discarded, which will be less than <n> only if EOF is
