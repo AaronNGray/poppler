@@ -41,6 +41,7 @@ class SplashPath;
 class SplashXPath;
 class SplashFont;
 struct SplashPipe;
+struct SplashScalingInfo;
 
 //------------------------------------------------------------------------
 
@@ -202,6 +203,8 @@ public:
     // The matrix behaves as for fillImageMask.
     SplashError drawImage(SplashImageSource src, SplashICCTransform tf, void *srcData, SplashColorMode srcMode, bool srcAlpha, int w, int h, SplashCoord *mat, bool interpolate, bool tilingPattern = false);
 
+    bool getScaledSize(SplashCoord *mat, int srcWidth, int srcHeight, int &scaledWidth, int &scaledHeight) const;
+
     // Composite a rectangular region from <src> onto this Splash
     // object.
     SplashError composite(SplashBitmap *src, int xSrc, int ySrc, int xDest, int yDest, int w, int h, bool noClip, bool nonIsolated, bool knockout = false, SplashCoord knockoutOpacity = 1.0);
@@ -296,8 +299,9 @@ private:
     void scaleMaskYupXdown(SplashImageMaskSource src, void *srcData, int srcWidth, int srcHeight, int scaledWidth, int scaledHeight, SplashBitmap *dest);
     void scaleMaskYupXup(SplashImageMaskSource src, void *srcData, int srcWidth, int srcHeight, int scaledWidth, int scaledHeight, SplashBitmap *dest);
     void blitMask(SplashBitmap *src, int xDest, int yDest, SplashClipResult clipRes);
-    SplashError arbitraryTransformImage(SplashImageSource src, SplashICCTransform tf, void *srcData, SplashColorMode srcMode, int nComps, bool srcAlpha, int srcWidth, int srcHeight, SplashCoord *mat, bool interpolate,
-                                        bool tilingPattern = false);
+    SplashScalingInfo getScalingInfo(SplashCoord *mat, int w, int h, bool tilingPattern = false) const;
+    SplashScalingInfo getArbitraryScalingInfo(SplashCoord *mat, int w, int h, bool tilingPattern) const;
+    void drawScaledImage(const SplashScalingInfo &info, SplashBitmap *scaledImg, const SplashCoord *mat, bool srcAlpha);
     SplashBitmap *scaleImage(SplashImageSource src, void *srcData, SplashColorMode srcMode, int nComps, bool srcAlpha, int srcWidth, int srcHeight, int scaledWidth, int scaledHeight, bool interpolate, bool tilingPattern = false);
     bool scaleImageYdownXdown(SplashImageSource src, void *srcData, SplashColorMode srcMode, int nComps, bool srcAlpha, int srcWidth, int srcHeight, int scaledWidth, int scaledHeight, SplashBitmap *dest);
     bool scaleImageYdownXup(SplashImageSource src, void *srcData, SplashColorMode srcMode, int nComps, bool srcAlpha, int srcWidth, int srcHeight, int scaledWidth, int scaledHeight, SplashBitmap *dest);

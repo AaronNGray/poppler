@@ -2873,6 +2873,14 @@ cleanup:
     delete imgStr;
 }
 
+bool CairoOutputDev::getScaledSize(GfxState *state, int srcWidth, int srcHeight, int &scaledWidth, int &scaledHeight)
+{
+    cairo_matrix_t matrix;
+    cairo_get_matrix(cairo, &matrix);
+    getScaledSize(&matrix, srcWidth, srcHeight, &scaledWidth, &scaledHeight);
+    return true;
+}
+
 static inline void getMatteColorRgb(GfxImageColorMap *colorMap, const GfxColor *matteColorIn, GfxRGB *matteColorRgb)
 {
     colorMap->getColorSpace()->getRGB(matteColorIn, matteColorRgb);
