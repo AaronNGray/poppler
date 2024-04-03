@@ -66,6 +66,8 @@ public:
     int lookChar() override;
     GooString *getPSFilter(int psLevel, const char *indent) override;
     bool isBinary(bool last = true) const override;
+    bool canSetImagePrescale() const override { return true; }
+    void setImagePrescale(int &srcWidth, int &srcHeigth, int scaledWidth, int scaledHeigth) override;
 
 private:
     void init();
@@ -81,6 +83,7 @@ private:
     struct str_error_mgr err;
     struct str_src_mgr src;
     JSAMPARRAY row_buffer;
+    unsigned int scale_denom;
 };
 
 #endif

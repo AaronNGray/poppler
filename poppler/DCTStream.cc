@@ -69,6 +69,7 @@ DCTStream::DCTStream(Stream *strA, int colorXformA, Dict *dict, int recursion) :
     } else {
         err.height = err.width = 0;
     }
+    scale_denom = 1;
     init();
 }
 
@@ -181,6 +182,10 @@ void DCTStream::reset()
                 break;
             }
 
+            cinfo.scale_num = 1;
+            cinfo.scale_denom = scale_denom;
+            cinfo.do_block_smoothing = FALSE;
+
             jpeg_start_decompress(&cinfo);
 
             row_stride = cinfo.output_width * cinfo.output_components;
@@ -263,4 +268,32 @@ GooString *DCTStream::getPSFilter(int psLevel, const char *indent)
 bool DCTStream::isBinary(bool last) const
 {
     return str->isBinary(true);
+}
+
+void DCTStream::setImagePrescale(int &srcWidth, int &srcHeigth, int scaledWidth, int scaledHeigth)
+{
+    const double factor = std::min(static_cast<double>(srcWidth) / scaledWidth, static_cast<double>(srcHeigth) / scaledHeigth);
+    unsigned int denom = 1;
+    if (factor < 2.5) {
+        denom = 1;
+    } else if (factor < 4.5) {
+        denom = 2;
+    } else if (factor < 8.5) {
+        denom = 4;
+    } else {
+        denom = 8;
+    }
+
+    while ((srcWidth % denom) != 0 || (srcHeigth % denom) != 0) {
+        if (denom == 1) {
+            break;
+        }
+        denom /= 2;
+    }
+
+    if (scale_denom != denom) {
+        scale_denom = denom;
+        srcWidth /= scale_denom;
+        srcHeigth /= scale_denom;
+    }
 }
