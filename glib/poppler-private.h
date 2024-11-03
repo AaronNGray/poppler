@@ -133,6 +133,30 @@ typedef struct
 
 PopplerRectangle *poppler_rectangle_new_from_pdf_rectangle(const PDFRectangle *rect);
 
+/*
+ * PopplerActionRenditionExtended:
+ *
+ * The real type behind the public PopplerActionRendition.
+ * Must be ABI compatible to it!
+ */
+typedef struct
+{
+    /*< private >*/
+    PopplerActionType type;
+    gchar *title;
+
+    PopplerActionRenditionOperation op;
+    PopplerMedia *media;
+
+    Ref annotRef;
+} PopplerActionRenditionExtended;
+
+typedef union {
+    /*< private >*/
+    PopplerAction action;
+    PopplerActionRenditionExtended rendition;
+} PopplerActionExtended;
+
 GList *_poppler_document_get_layers(PopplerDocument *document);
 GList *_poppler_document_get_layer_rbgroup(PopplerDocument *document, Layer *layer);
 PopplerPage *_poppler_page_new(PopplerDocument *document, Page *page, int index);

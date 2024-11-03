@@ -103,9 +103,13 @@ G_DEFINE_BOXED_TYPE(PopplerAction, poppler_action, poppler_action_copy, poppler_
  **/
 void poppler_action_free(PopplerAction *action)
 {
+    PopplerActionExtended *action_extended;
+
     if (action == nullptr) {
         return;
     }
+
+    action_extended = reinterpret_cast<PopplerActionExtended *>(action);
 
     /* Action specific stuff */
     switch (action->type) {
@@ -156,7 +160,7 @@ void poppler_action_free(PopplerAction *action)
     }
 
     g_free(action->any.title);
-    g_slice_free(PopplerAction, action);
+    g_slice_free(PopplerActionExtended, action_extended);
 }
 
 /**
@@ -169,12 +173,15 @@ void poppler_action_free(PopplerAction *action)
  **/
 PopplerAction *poppler_action_copy(PopplerAction *action)
 {
+    PopplerActionExtended *action_extended, *new_action_extended;
     PopplerAction *new_action;
 
     g_return_val_if_fail(action != nullptr, NULL);
 
     /* Do a straight copy of the memory */
-    new_action = g_slice_dup(PopplerAction, action);
+    action_extended = reinterpret_cast<PopplerActionExtended *>(action);
+    new_action_extended = g_slice_dup(PopplerActionExtended, action_extended);
+    new_action = &new_action_extended->action;
 
     if (action->any.title != nullptr) {
         new_action->any.title = g_strdup(action->any.title);
@@ -546,13 +553,30 @@ static void build_reset_form(PopplerAction *action, const LinkResetForm *link)
     action->reset_form.exclude = link->getExclude();
 }
 
-static void build_rendition(PopplerAction *action, const LinkRendition *link)
+static void build_rendition(PopplerActionExtended *action, const LinkRendition *link)
 {
-    action->rendition.op = link->getOperation();
+    switch (link->getOperation()) {
+    case LinkRendition::NoRendition:
+        action->rendition.op = POPPLER_ACTION_RENDITION_NONE;
+        break;
+    case LinkRendition::PlayRendition:
+        action->rendition.op = POPPLER_ACTION_RENDITION_PLAY;
+        break;
+    case LinkRendition::StopRendition:
+        action->rendition.op = POPPLER_ACTION_RENDITION_STOP;
+        break;
+    case LinkRendition::PauseRendition:
+        action->rendition.op = POPPLER_ACTION_RENDITION_PAUSE;
+        break;
+    case LinkRendition::ResumeRendition:
+        action->rendition.op = POPPLER_ACTION_RENDITION_RESUME;
+        break;
+    }
     if (link->getMedia()) {
         action->rendition.media = _poppler_media_new(link->getMedia());
     }
-    // TODO: annotation reference
+
+    action->rendition.annotRef = link->getScreenAnnot();
 }
 
 static PopplerLayer *get_layer_for_ref(PopplerDocument *document, GList *layers, const Ref ref, gboolean preserve_rb)
@@ -627,9 +651,11 @@ static void build_ocg_state(PopplerDocument *document, PopplerAction *action, co
 
 PopplerAction *_poppler_action_new(PopplerDocument *document, const LinkAction *link, const gchar *title)
 {
+    PopplerActionExtended *action_extended;
     PopplerAction *action;
 
-    action = g_slice_new0(PopplerAction);
+    action_extended = g_slice_new0(PopplerActionExtended);
+    action = &action_extended->action;
 
     if (title) {
         action->any.title = g_strdup(title);
@@ -667,7 +693,7 @@ PopplerAction *_poppler_action_new(PopplerDocument *document, const LinkAction *
         break;
     case actionRendition:
         action->type = POPPLER_ACTION_RENDITION;
-        build_rendition(action, static_cast<const LinkRendition *>(link));
+        build_rendition(action_extended, static_cast<const LinkRendition *>(link));
         break;
     case actionOCGState:
         action->type = POPPLER_ACTION_OCG_STATE;

@@ -59,6 +59,22 @@ static void poppler_form_field_finalize(GObject *object)
         poppler_action_free(field->action);
         field->action = nullptr;
     }
+    if (field->field_modified_action) {
+        poppler_action_free(field->field_modified_action);
+        field->field_modified_action = nullptr;
+    }
+    if (field->format_field_action) {
+        poppler_action_free(field->format_field_action);
+        field->format_field_action = nullptr;
+    }
+    if (field->validate_field_action) {
+        poppler_action_free(field->validate_field_action);
+        field->validate_field_action = nullptr;
+    }
+    if (field->calculate_field_action) {
+        poppler_action_free(field->calculate_field_action);
+        field->calculate_field_action = nullptr;
+    }
     field->widget = nullptr;
 
     G_OBJECT_CLASS(poppler_form_field_parent_class)->finalize(object);

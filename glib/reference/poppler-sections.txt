@@ -572,6 +572,8 @@ poppler_annot_markup_set_popup_rectangle
 poppler_annot_movie_get_movie
 poppler_annot_movie_get_title
 poppler_annot_screen_get_action
+poppler_annot_screen_get_additional_action
+poppler_annot_screen_is_referenced_by_rendition
 poppler_annot_set_color
 poppler_annot_set_contents
 poppler_annot_set_flags
@@ -693,6 +695,7 @@ poppler_media_is_embedded
 poppler_media_save
 poppler_media_save_to_fd
 poppler_media_save_to_callback
+poppler_media_is_same_media
 
 <SUBSECTION Standard>
 POPPLER_MEDIA

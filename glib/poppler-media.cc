@@ -382,3 +382,33 @@ gboolean poppler_media_save_to_callback(PopplerMedia *poppler_media, PopplerMedi
 
     return TRUE;
 }
+
+/**
+ * poppler_media_is_same_media:
+ * @poppler_media: a #PopplerMedia
+ * @other: another #PopplerMedia
+ *
+ * Checks whether two medias objects specify the same media
+ *
+ * Return value: %TRUE, if @poppler_media and @other reference the same media, %FALSE otherwise
+ *
+ *
+ * Since: 22.12.0
+ */
+POPPLER_PUBLIC
+gboolean poppler_media_is_same_media(PopplerMedia *poppler_media, PopplerMedia *other)
+{
+    g_assert(poppler_media != nullptr && other != nullptr);
+
+    if (poppler_media->filename) {
+        if (g_strcmp0(poppler_media->filename, other->filename)) {
+            return FALSE;
+        }
+    } else {
+        if (poppler_media->stream.getRef() != other->stream.getRef()) {
+            return FALSE;
+        }
+    }
+
+    return TRUE;
+}

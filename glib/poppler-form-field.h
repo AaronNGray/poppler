@@ -127,27 +127,6 @@ typedef enum
     POPPLER_FORM_CHOICE_LIST
 } PopplerFormChoiceType;
 
-/**
- * PopplerAdditionalActionType:
- * @POPPLER_ADDITIONAL_ACTION_FIELD_MODIFIED: The action to be performed when the user modifies the field.
- * @POPPLER_ADDITIONAL_ACTION_FORMAT_FIELD: The action to be performed before the field is formatted to
- * display its value.
- * @POPPLER_ADDITIONAL_ACTION_VALIDATE_FIELD: The action to be performed when the field value changes.
- * @POPPLER_ADDITIONAL_ACTION_CALCULATE_FIELD: The action to be performed when the field needs to be
- * recalculated.
- *
- * Form field additional action types to be passed to @poppler_form_field_get_additional_action
- *
- * Since: 0.72
- */
-typedef enum
-{
-    POPPLER_ADDITIONAL_ACTION_FIELD_MODIFIED,
-    POPPLER_ADDITIONAL_ACTION_FORMAT_FIELD,
-    POPPLER_ADDITIONAL_ACTION_VALIDATE_FIELD,
-    POPPLER_ADDITIONAL_ACTION_CALCULATE_FIELD
-} PopplerAdditionalActionType;
-
 POPPLER_PUBLIC
 GType poppler_form_field_get_type(void) G_GNUC_CONST;
 

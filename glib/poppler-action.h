@@ -104,6 +104,27 @@ typedef enum
 } PopplerDestType;
 
 /**
+ * PopplerActionRenditionOperation:
+ * @POPPLER_ACTION_RENDITION_NONE: do nothing
+ * @POPPLER_ACTION_RENDITION_PLAY: play rendition
+ * @POPPLER_ACTION_RENDITION_STOP: pause playing rendition
+ * @POPPLER_ACTION_RENDITION_PAUSE: resume paused rendition
+ * @POPPLER_ACTION_RENDITION_RESUME: stop playing rendition
+ *
+ * Rendition operations
+ *
+ * Since: 22.12.0
+ */
+typedef enum
+{
+    POPPLER_ACTION_RENDITION_NONE = 0,
+    POPPLER_ACTION_RENDITION_PLAY = 1,
+    POPPLER_ACTION_RENDITION_STOP = 2,
+    POPPLER_ACTION_RENDITION_PAUSE = 3,
+    POPPLER_ACTION_RENDITION_RESUME = 4
+} PopplerActionRenditionOperation;
+
+/**
  * PopplerActionMovieOperation:
  * @POPPLER_ACTION_MOVIE_PLAY: play movie
  * @POPPLER_ACTION_MOVIE_PAUSE: pause playing movie
@@ -340,7 +361,7 @@ struct _PopplerActionRendition
     PopplerActionType type;
     gchar *title;
 
-    gint op;
+    PopplerActionRenditionOperation op;
     PopplerMedia *media;
 };
 

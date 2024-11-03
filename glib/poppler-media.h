@@ -74,6 +74,8 @@ gboolean poppler_media_save_to_fd(PopplerMedia *poppler_media, int fd, GError **
 #endif
 POPPLER_PUBLIC
 gboolean poppler_media_save_to_callback(PopplerMedia *poppler_media, PopplerMediaSaveFunc save_func, gpointer user_data, GError **error);
+POPPLER_PUBLIC
+gboolean poppler_media_is_same_media(PopplerMedia *poppler_media, PopplerMedia *other);
 
 G_END_DECLS
 
