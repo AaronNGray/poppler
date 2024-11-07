@@ -129,7 +129,7 @@ typedef struct _ByteRange
 // Stream (base class)
 //------------------------------------------------------------------------
 
-#define streamBufSize 8096
+#define streamBufSize 8192
 
 class POPPLER_PRIVATE_EXPORT Stream
 {
