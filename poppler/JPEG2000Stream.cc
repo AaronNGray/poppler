@@ -16,6 +16,7 @@
 //
 //========================================================================
 
+#include <cmath>
 #include "config.h"
 #include "JPEG2000Stream.h"
 #include <openjpeg.h>
@@ -28,6 +29,7 @@ struct JPXStreamPrivate
     int npixels = 0;
     int ncomps = 0;
     bool inited = false;
+    OPJ_UINT32 reduce = 0;
     void init2(OPJ_CODEC_FORMAT format, const unsigned char *buf, int length, bool indexed);
 };
 
@@ -168,6 +170,31 @@ void JPXStream::getImageParams(int *bitsPerComponent, StreamColorSpaceMode *csMo
         *csMode = streamCSDeviceCMYK;
     } else {
         *csMode = streamCSDeviceGray;
+    }
+}
+
+void JPXStream::setImagePrescale(int &srcWidth, int &srcHeigth, int scaledWidth, int scaledHeigth)
+{
+    if (priv->inited) {
+        error(errInternal, -1, "JPXStream: Can't set prescale, the image is already unpacked.");
+        return;
+    }
+
+    // We should find power of two which is upper bound than factor
+    OPJ_UINT32 reduce = 0;
+    double factor = std::min(srcWidth / scaledWidth, srcHeigth / scaledHeigth);
+    if (factor < 1.) {
+        factor = 1.;
+    }
+    reduce = static_cast<OPJ_UINT32>(std::log2(factor));
+
+    if (priv->reduce != reduce) {
+        priv->reduce = reduce;
+        init();
+        if (priv->inited && priv->image) {
+            srcWidth = priv->image->comps[0].w;
+            srcHeigth = priv->image->comps[0].h;
+        }
     }
 }
 
@@ -338,6 +365,7 @@ void JPXStreamPrivate::init2(OPJ_CODEC_FORMAT format, const unsigned char *buf, 
     if (indexed) {
         parameters.flags |= OPJ_DPARAMETERS_IGNORE_PCLR_CMAP_CDEF_FLAG;
     }
+    parameters.cp_reduce = reduce;
 
     /* Get the decoder handle of the format */
     decoder = opj_create_decompress(format);

@@ -40,6 +40,8 @@ public:
     GooString *getPSFilter(int psLevel, const char *indent) override;
     bool isBinary(bool last = true) const override;
     void getImageParams(int *bitsPerComponent, StreamColorSpaceMode *csMode) override;
+    bool canSetImagePrescale() const override { return true; }
+    void setImagePrescale(int &srcWidth, int &srcHeigth, int scaledWidth, int scaledHeigth) override;
 
     int readStream(int nChars, unsigned char *buffer) { return str->doGetChars(nChars, buffer); }
 

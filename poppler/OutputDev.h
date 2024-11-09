@@ -301,6 +301,7 @@ public:
     virtual void drawMaskedImage(GfxState *state, Object *ref, Stream *str, int width, int height, GfxImageColorMap *colorMap, bool interpolate, Stream *maskStr, int maskWidth, int maskHeight, bool maskInvert, bool maskInterpolate);
     virtual void drawSoftMaskedImage(GfxState *state, Object *ref, Stream *str, int width, int height, GfxImageColorMap *colorMap, bool interpolate, Stream *maskStr, int maskWidth, int maskHeight, GfxImageColorMap *maskColorMap,
                                      bool maskInterpolate);
+    virtual bool getScaledSize(GfxState * /*state*/, int /*srcWidth*/, int /*srcHeight*/, int & /*scaledWidth*/, int & /*scaledHeight*/) { return false; }
 
     //----- grouping operators
 

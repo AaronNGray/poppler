@@ -3852,6 +3852,25 @@ void SplashOutputDev::drawSoftMaskedImage(GfxState *state, Object * /* ref */, S
     str->close();
 }
 
+bool SplashOutputDev::getScaledSize(GfxState *state, int srcWidth, int srcHeight, int &scaledWidth, int &scaledHeight)
+{
+    const double *ctm = state->getCTM();
+    for (int i = 0; i < 6; ++i) {
+        if (!std::isfinite(ctm[i])) {
+            return false;
+        }
+    }
+
+    SplashCoord mat[6];
+    mat[0] = ctm[0];
+    mat[1] = ctm[1];
+    mat[2] = -ctm[2];
+    mat[3] = -ctm[3];
+    mat[4] = ctm[2] + ctm[4];
+    mat[5] = ctm[3] + ctm[5];
+    return splash->getScaledSize(mat, srcWidth, srcHeight, scaledWidth, scaledHeight);
+}
+
 bool SplashOutputDev::checkTransparencyGroup(GfxState *state, bool knockout)
 {
     if (state->getFillOpacity() != 1 || state->getStrokeOpacity() != 1 || state->getAlphaIsShape() || state->getBlendMode() != gfxBlendNormal || splash->getSoftMask() != nullptr || knockout) {

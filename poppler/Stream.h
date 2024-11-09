@@ -252,6 +252,8 @@ public:
 
     // Get image parameters which are defined by the stream contents.
     virtual void getImageParams(int * /*bitsPerComponent*/, StreamColorSpaceMode * /*csMode*/) { }
+    virtual bool canSetImagePrescale() const { return false; }
+    virtual void setImagePrescale(int & /*srcWidth*/, int & /*srcHeigth*/, int /*scaledWidth*/, int /*scaledHeigth*/) { }
 
     // Return the next stream in the "stack".
     virtual Stream *getNextStream() const { return nullptr; }

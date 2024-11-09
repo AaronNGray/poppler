@@ -291,6 +291,7 @@ public:
     void drawMaskedImage(GfxState *state, Object *ref, Stream *str, int width, int height, GfxImageColorMap *colorMap, bool interpolate, Stream *maskStr, int maskWidth, int maskHeight, bool maskInvert, bool maskInterpolate) override;
     void drawSoftMaskedImage(GfxState *state, Object *ref, Stream *str, int width, int height, GfxImageColorMap *colorMap, bool interpolate, Stream *maskStr, int maskWidth, int maskHeight, GfxImageColorMap *maskColorMap,
                              bool maskInterpolate) override;
+    bool getScaledSize(GfxState *state, int srcWidth, int srcHeight, int &scaledWidth, int &scaledHeight) override;
 
     //----- Type 3 font operators
     void type3D0(GfxState *state, double wx, double wy) override;

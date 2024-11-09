@@ -4169,11 +4169,6 @@ void Gfx::doImage(Object *ref, Stream *str, bool inlineImg)
     Stream *maskStr;
     int i, n;
 
-    // get info from the stream
-    bits = 0;
-    csMode = streamCSNone;
-    str->getImageParams(&bits, &csMode);
-
     // get stream dict
     dict = str->getDict();
 
@@ -4241,6 +4236,21 @@ void Gfx::doImage(Object *ref, Stream *str, bool inlineImg)
     } else if (!obj1.isNull()) {
         goto err1;
     }
+
+    // Try setImagePrescale if drawing is enabled
+    // and decoder supports setImagePrescale
+    // and if output device can return prescaled size
+    if (ocState && out->needNonText() && !singular_matrix && str->canSetImagePrescale()) {
+        int scaledWidth, scaledHeight;
+        if (out->getScaledSize(state, width, height, scaledWidth, scaledHeight)) {
+            str->setImagePrescale(width, height, scaledWidth, scaledHeight);
+        }
+    }
+
+    // get info from the stream
+    bits = 0;
+    csMode = streamCSNone;
+    str->getImageParams(&bits, &csMode);
 
     // bit depth
     if (bits == 0) {

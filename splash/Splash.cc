@@ -136,6 +136,22 @@ struct ImageSection
     SplashCoord dxdyb; // slope of edge B
 };
 
+enum ScalingMode
+{
+    ScalingOnly = 0,
+    ScalingPlusVerticalFlip,
+    ScalingOtherCases,
+};
+
+struct SplashScalingInfo
+{
+    ScalingMode mode;
+    int x0, y0, x1, y1, scaledWidth, scaledHeight;
+    SplashClipResult clipResult;
+    SplashCoord vx[4], vy[4], ir00, ir01, ir10, ir11; // using only if mode == ScalingOtherCases
+    int splashError;
+};
+
 //------------------------------------------------------------------------
 // SplashPipe
 //------------------------------------------------------------------------
@@ -3513,11 +3529,7 @@ SplashError Splash::drawImage(SplashImageSource src, SplashICCTransform tf, void
 {
     bool ok;
     SplashBitmap *scaledImg;
-    SplashClipResult clipRes;
-    bool minorAxisZero;
-    int x0, y0, x1, y1, scaledWidth, scaledHeight;
     int nComps;
-    int yp;
 
     if (debugMode) {
         printf("drawImage: srcMode=%d srcAlpha=%d w=%d h=%d mat=[%.2f %.2f %.2f %.2f %.2f %.2f]\n", srcMode, srcAlpha, w, h, (double)mat[0], (double)mat[1], (double)mat[2], (double)mat[3], (double)mat[4], (double)mat[5]);
@@ -3565,10 +3577,68 @@ SplashError Splash::drawImage(SplashImageSource src, SplashICCTransform tf, void
         return splashErrSingularMatrix;
     }
 
-    minorAxisZero = mat[1] == 0 && mat[2] == 0;
+    const SplashScalingInfo info = getScalingInfo(mat, w, h, tilingPattern);
+    if (info.splashError != splashOk) {
+        return info.splashError;
+    }
+
+    scaledImg = scaleImage(src, srcData, srcMode, nComps, srcAlpha, w, h, info.scaledWidth, info.scaledHeight, interpolate, tilingPattern);
+    if (scaledImg == nullptr) {
+        return splashErrBadArg;
+    }
+
+    opClipRes = info.clipResult;
+
+    if (tf != nullptr) {
+        (*tf)(srcData, scaledImg);
+    }
+
+    switch (info.mode) {
+    case ScalingOnly:
+        blitImage(scaledImg, srcAlpha, info.x0, info.y0, info.clipResult);
+        break;
+    case ScalingPlusVerticalFlip:
+        vertFlipImage(scaledImg, info.scaledWidth, info.scaledHeight, nComps);
+        blitImage(scaledImg, srcAlpha, info.x0, info.y0, info.clipResult);
+        break;
+    case ScalingOtherCases:
+        drawScaledImage(info, scaledImg, mat, srcAlpha);
+        break;
+    }
+
+    delete scaledImg;
+    return splashOk;
+}
+
+bool Splash::getScaledSize(SplashCoord *mat, int srcWidth, int srcHeight, int &scaledWidth, int &scaledHeight) const
+{
+    const SplashScalingInfo info = getScalingInfo(mat, srcWidth, srcHeight);
+    if (info.splashError != splashOk) {
+        return false;
+    }
+
+    scaledWidth = info.scaledWidth;
+    scaledHeight = info.scaledHeight;
+    return true;
+}
+
+SplashScalingInfo Splash::getScalingInfo(SplashCoord *mat, int w, int h, bool tilingPattern) const
+{
+    SplashScalingInfo info;
+    info.splashError = splashErrBadArg;
+    int &x0 = info.x0;
+    int &y0 = info.y0;
+    int &x1 = info.x1;
+    int &y1 = info.y1;
+    int &scaledWidth = info.scaledWidth;
+    int &scaledHeight = info.scaledHeight;
+    SplashClipResult &clipRes = info.clipResult;
+    const bool minorAxisZero = mat[1] == 0 && mat[2] == 0;
+    int yp;
 
     // scaling only
     if (mat[0] > 0 && minorAxisZero && mat[3] > 0) {
+        info.mode = ScalingOnly;
         x0 = imgCoordMungeLower(mat[4]);
         y0 = imgCoordMungeLower(mat[5]);
         x1 = imgCoordMungeUpper(mat[0] + mat[4]);
@@ -3580,28 +3650,22 @@ SplashError Splash::drawImage(SplashImageSource src, SplashICCTransform tf, void
         if (y0 == y1) {
             ++y1;
         }
+
         clipRes = state->clip->testRect(x0, y0, x1 - 1, y1 - 1);
-        opClipRes = clipRes;
         if (clipRes != splashClipAllOutside) {
             scaledWidth = x1 - x0;
             scaledHeight = y1 - y0;
             yp = h / scaledHeight;
             if (yp < 0 || yp > INT_MAX - 1) {
-                return splashErrBadArg;
+                return info;
             }
-            scaledImg = scaleImage(src, srcData, srcMode, nComps, srcAlpha, w, h, scaledWidth, scaledHeight, interpolate, tilingPattern);
-            if (scaledImg == nullptr) {
-                return splashErrBadArg;
-            }
-            if (tf != nullptr) {
-                (*tf)(srcData, scaledImg);
-            }
-            blitImage(scaledImg, srcAlpha, x0, y0, clipRes);
-            delete scaledImg;
+
+            info.splashError = splashOk;
         }
 
         // scaling plus vertical flip
     } else if (mat[0] > 0 && minorAxisZero && mat[3] < 0) {
+        info.mode = ScalingPlusVerticalFlip;
         x0 = imgCoordMungeLower(mat[4]);
         y0 = imgCoordMungeLower(mat[3] + mat[5]);
         x1 = imgCoordMungeUpper(mat[0] + mat[4]);
@@ -3620,51 +3684,38 @@ SplashError Splash::drawImage(SplashImageSource src, SplashICCTransform tf, void
                 ++y1;
             }
         }
+
         clipRes = state->clip->testRect(x0, y0, x1 - 1, y1 - 1);
-        opClipRes = clipRes;
         if (clipRes != splashClipAllOutside) {
             scaledWidth = x1 - x0;
             scaledHeight = y1 - y0;
             yp = h / scaledHeight;
             if (yp < 0 || yp > INT_MAX - 1) {
-                return splashErrBadArg;
+                return info;
             }
-            scaledImg = scaleImage(src, srcData, srcMode, nComps, srcAlpha, w, h, scaledWidth, scaledHeight, interpolate, tilingPattern);
-            if (scaledImg == nullptr) {
-                return splashErrBadArg;
-            }
-            if (tf != nullptr) {
-                (*tf)(srcData, scaledImg);
-            }
-            vertFlipImage(scaledImg, scaledWidth, scaledHeight, nComps);
-            blitImage(scaledImg, srcAlpha, x0, y0, clipRes);
-            delete scaledImg;
+            info.splashError = splashOk;
         }
 
         // all other cases
     } else {
-        return arbitraryTransformImage(src, tf, srcData, srcMode, nComps, srcAlpha, w, h, mat, interpolate, tilingPattern);
+        return getArbitraryScalingInfo(mat, w, h, tilingPattern);
     }
-
-    return splashOk;
+    return info;
 }
 
-SplashError Splash::arbitraryTransformImage(SplashImageSource src, SplashICCTransform tf, void *srcData, SplashColorMode srcMode, int nComps, bool srcAlpha, int srcWidth, int srcHeight, SplashCoord *mat, bool interpolate,
-                                            bool tilingPattern)
+SplashScalingInfo Splash::getArbitraryScalingInfo(SplashCoord *mat, int w, int h, bool tilingPattern) const
 {
-    SplashBitmap *scaledImg;
-    SplashClipResult clipRes, clipRes2;
-    SplashPipe pipe;
-    SplashColor pixel = {};
-    int scaledWidth, scaledHeight, t0, t1, th;
-    SplashCoord r00, r01, r10, r11, det, ir00, ir01, ir10, ir11;
-    SplashCoord vx[4], vy[4];
-    int xMin, yMin, xMax, yMax;
-    ImageSection section[3];
-    int nSections;
-    int y, xa, xb, x, i, xx, yy, yp;
+    SplashScalingInfo info;
+    info.splashError = splashErrBadArg;
+    info.mode = ScalingOtherCases;
+    int &scaledWidth = info.scaledWidth;
+    int &scaledHeight = info.scaledHeight;
+    SplashClipResult &clipRes = info.clipResult;
+    int yp;
 
     // compute the four vertices of the target quadrilateral
+    SplashCoord(&vx)[4] = info.vx;
+    SplashCoord(&vy)[4] = info.vy;
     vx[0] = mat[4];
     vy[0] = mat[5];
     vx[1] = mat[2] + mat[4];
@@ -3675,10 +3726,15 @@ SplashError Splash::arbitraryTransformImage(SplashImageSource src, SplashICCTran
     vy[3] = mat[1] + mat[5];
 
     // clipping
+    int &xMin = info.x0;
+    int &xMax = info.x1;
+    int &yMin = info.y0;
+    int &yMax = info.y1;
     xMin = imgCoordMungeLower(vx[0]);
     xMax = imgCoordMungeUpper(vx[0]);
     yMin = imgCoordMungeLower(vy[0]);
     yMax = imgCoordMungeUpper(vy[0]);
+    int t0, t1, th, i;
     for (i = 1; i < 4; ++i) {
         t0 = imgCoordMungeLower(vx[i]);
         if (t0 < xMin) {
@@ -3698,25 +3754,27 @@ SplashError Splash::arbitraryTransformImage(SplashImageSource src, SplashICCTran
         }
     }
     clipRes = state->clip->testRect(xMin, yMin, xMax, yMax);
-    opClipRes = clipRes;
     if (clipRes == splashClipAllOutside) {
-        return splashOk;
+        scaledWidth = w;
+        scaledHeight = h;
+        info.splashError = splashOk;
+        return info;
     }
 
     // compute the scale factors
     if (splashAbs(mat[0]) >= splashAbs(mat[1])) {
         if (unlikely(checkedSubtraction(xMax, xMin, &scaledWidth))) {
-            return splashErrBadArg;
+            return info;
         }
         if (unlikely(checkedSubtraction(yMax, yMin, &scaledHeight))) {
-            return splashErrBadArg;
+            return info;
         }
     } else {
         if (unlikely(checkedSubtraction(yMax, yMin, &scaledWidth))) {
-            return splashErrBadArg;
+            return info;
         }
         if (unlikely(checkedSubtraction(xMax, xMin, &scaledHeight))) {
-            return splashErrBadArg;
+            return info;
         }
     }
     if (scaledHeight <= 1 || scaledWidth <= 1 || tilingPattern) {
@@ -3775,6 +3833,7 @@ SplashError Splash::arbitraryTransformImage(SplashImageSource src, SplashICCTran
     }
 
     // compute the inverse transform (after scaling) matrix
+    SplashCoord r00, r01, r10, r11, det;
     r00 = mat[0] / scaledWidth;
     r01 = mat[1] / scaledWidth;
     r10 = mat[2] / scaledHeight;
@@ -3782,29 +3841,31 @@ SplashError Splash::arbitraryTransformImage(SplashImageSource src, SplashICCTran
     det = r00 * r11 - r01 * r10;
     if (splashAbs(det) < 1e-6) {
         // this should be caught by the singular matrix check in drawImage
-        return splashErrBadArg;
+        return info;
     }
-    ir00 = r11 / det;
-    ir01 = -r01 / det;
-    ir10 = -r10 / det;
-    ir11 = r00 / det;
 
-    // scale the input image
-    yp = srcHeight / scaledHeight;
+    info.ir00 = r11 / det;
+    info.ir01 = -r01 / det;
+    info.ir10 = -r10 / det;
+    info.ir11 = r00 / det;
+
+    yp = h / scaledHeight;
     if (yp < 0 || yp > INT_MAX - 1) {
-        return splashErrBadArg;
-    }
-    scaledImg = scaleImage(src, srcData, srcMode, nComps, srcAlpha, srcWidth, srcHeight, scaledWidth, scaledHeight, interpolate);
-
-    if (scaledImg == nullptr) {
-        return splashErrBadArg;
+        return info;
     }
 
-    if (tf != nullptr) {
-        (*tf)(srcData, scaledImg);
-    }
+    info.splashError = splashOk;
+    return info;
+}
+
+void Splash::drawScaledImage(const SplashScalingInfo &info, SplashBitmap *scaledImg, const SplashCoord *mat, bool srcAlpha)
+{
     // construct the three sections
-    i = 0;
+    ImageSection section[3];
+    int nSections;
+    int i = 0;
+    const SplashCoord(&vx)[4] = info.vx;
+    const SplashCoord(&vy)[4] = info.vy;
     if (vy[1] < vy[i]) {
         i = 1;
     }
@@ -3893,6 +3954,9 @@ SplashError Splash::arbitraryTransformImage(SplashImageSource src, SplashICCTran
     }
 
     // initialize the pixel pipe
+    SplashPipe pipe;
+    SplashColor pixel = {};
+    SplashClipResult clipRes = info.clipResult;
     pipeInit(&pipe, 0, 0, nullptr, pixel, (unsigned char)splashRound(state->fillAlpha * 255), srcAlpha || (vectorAntialias && clipRes != splashClipAllInside), false);
     if (vectorAntialias) {
         drawAAPixelInit();
@@ -3913,6 +3977,7 @@ SplashError Splash::arbitraryTransformImage(SplashImageSource src, SplashICCTran
 
     // scan all pixels inside the target region
     for (i = 0; i < nSections; ++i) {
+        int y, xa, xb, x, xx, yy;
         for (y = section[i].y0; y <= section[i].y1; ++y) {
             xa = imgCoordMungeLower(section[i].xa0 + ((SplashCoord)y + 0.5 - section[i].ya0) * section[i].dxdya);
             if (unlikely(xa < 0)) {
@@ -3926,12 +3991,19 @@ SplashError Splash::arbitraryTransformImage(SplashImageSource src, SplashICCTran
             if (unlikely(clipRes == splashClipAllInside && xb > bitmap->getWidth())) {
                 xb = bitmap->getWidth();
             }
+            SplashClipResult clipRes2;
             if (clipRes != splashClipAllInside) {
                 clipRes2 = state->clip->testSpan(xa, xb - 1, y);
             } else {
                 clipRes2 = clipRes;
             }
             for (x = xa; x < xb; ++x) {
+                const SplashCoord &ir00 = info.ir00;
+                const SplashCoord &ir01 = info.ir01;
+                const SplashCoord &ir10 = info.ir10;
+                const SplashCoord &ir11 = info.ir11;
+                const int &scaledWidth = info.scaledWidth;
+                const int &scaledHeight = info.scaledHeight;
                 // map (x+0.5, y+0.5) back to the scaled image
                 xx = splashFloor(((SplashCoord)x + 0.5 - mat[4]) * ir00 + ((SplashCoord)y + 0.5 - mat[5]) * ir10);
                 yy = splashFloor(((SplashCoord)x + 0.5 - mat[4]) * ir01 + ((SplashCoord)y + 0.5 - mat[5]) * ir11);
@@ -3961,9 +4033,6 @@ SplashError Splash::arbitraryTransformImage(SplashImageSource src, SplashICCTran
             }
         }
     }
-
-    delete scaledImg;
-    return splashOk;
 }
 
 // determine if a scaled image requires interpolation based on the scale and
