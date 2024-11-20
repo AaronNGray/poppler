@@ -1215,7 +1215,7 @@ const PDFRectangle *_poppler_annot_get_cropbox(PopplerAnnot *poppler_annot)
  * @poppler_annot: a #PopplerAnnot
  * @poppler_rect: (out): a #PopplerRectangle to store the annotation's coordinates
  *
- * Retrieves the rectangle representing the page coordinates where the
+ * Retrieves the rectangle representing the user space coordinates where the
  * annotation @poppler_annot is placed.
  *
  * Since: 0.26
@@ -1245,10 +1245,13 @@ void poppler_annot_get_rectangle(PopplerAnnot *poppler_annot, PopplerRectangle *
 /**
  * poppler_annot_set_rectangle:
  * @poppler_annot: a #PopplerAnnot
- * @poppler_rect: a #PopplerRectangle with the new annotation's coordinates
+ * @poppler_rect: a #PopplerRectangle with the new annotation's normalized
+ * coordinates
  *
- * Move the annotation to the rectangle representing the page coordinates
- * where the annotation @poppler_annot should be placed.
+ * Move the annotation to the rectangle representing the normalized coordinates
+ * where the annotation @poppler_annot should be placed. Bear in mind the
+ * assymetry with poppler_annot_get_rectangle, which provides user space instead
+ * or normalized coordinates!
  *
  * Since: 0.26
  */

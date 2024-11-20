@@ -1264,7 +1264,9 @@ void poppler_page_free_form_field_mapping(GList *list)
  * @page: A #PopplerPage
  *
  * Returns a list of #PopplerAnnotMapping items that map from a location on
- * @page to a #PopplerAnnot.  This list must be freed with
+ * @page to a #PopplerAnnot. Whereas the #PopplerRectangle of the annotations
+ * is an invariant, the #PopplerRectangle returned in #PopplerAnnotMapping
+ * represents This list must be freed with
  * poppler_page_free_annot_mapping() when done.
  *
  * Return value: (element-type PopplerAnnotMapping) (transfer full): A #GList of #PopplerAnnotMapping
