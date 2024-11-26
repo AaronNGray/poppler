@@ -810,6 +810,26 @@ PopplerPage *poppler_document_get_page_by_label(PopplerDocument *document, const
     return poppler_document_get_page(document, index);
 }
 
+void poppler_document_remove_page(PopplerDocument *document, int index)
+{
+    document->doc->removePage(document->doc->getPage(index + 1));
+}
+
+/**
+ * poppler_document_insert_page:
+ * @document: A #PopplerDocument
+ * @page: a page
+ * @index: where the page is going to be inserted (@page will be page number
+ * @index)
+ *
+ * Copy @page and insert it in @document. @page can be a page of @document or
+ * come from another #PopplerDocument.
+ **/
+void poppler_document_insert_page(PopplerDocument *document, PopplerPage *page, int index)
+{
+    document->doc->insertPage(page->page, index + 1);
+}
+
 /**
  * poppler_document_get_n_attachments:
  * @document: A #PopplerDocument
