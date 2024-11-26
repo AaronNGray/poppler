@@ -64,6 +64,7 @@
 #include "poppler-private.h"
 #include "poppler-enums.h"
 #include "poppler-input-stream.h"
+#include "poppler-output-stream.h"
 #include "poppler-cached-file-loader.h"
 
 #ifdef G_OS_WIN32
@@ -581,6 +582,17 @@ gboolean poppler_document_save(PopplerDocument *document, const char *uri, GErro
     }
 
     return retval;
+}
+
+gboolean poppler_document_save_outstream(PopplerDocument *document, GOutputStream *stream, GCancellable *cancellable, GError **error)
+{
+    g_return_val_if_fail(POPPLER_IS_DOCUMENT(document), FALSE);
+
+    GLibOutStream outStr = GLibOutStream(stream, cancellable, error);
+
+    document->doc->saveAs(&outStr);
+    outStr.flush();
+    return TRUE;
 }
 
 /**

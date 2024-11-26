@@ -310,6 +310,8 @@ POPPLER_PUBLIC
 gboolean poppler_document_save(PopplerDocument *document, const char *uri, GError **error);
 POPPLER_PUBLIC
 gboolean poppler_document_save_a_copy(PopplerDocument *document, const char *uri, GError **error);
+POPPLER_PUBLIC
+gboolean poppler_document_save_outstream(PopplerDocument *document, GOutputStream *stream, GCancellable *cancellable, GError **error);
 #ifndef G_OS_WIN32
 POPPLER_PUBLIC
 gboolean poppler_document_save_to_fd(PopplerDocument *document, int fd, gboolean include_changes, GError **error);
