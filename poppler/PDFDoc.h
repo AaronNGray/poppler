@@ -353,6 +353,10 @@ public:
                                                  double leftFontSize, std::unique_ptr<AnnotColor> &&fontColor, double borderWidth, std::unique_ptr<AnnotColor> &&borderColor, std::unique_ptr<AnnotColor> &&backgroundColor,
                                                  const std::string &imagePath);
 
+    std::map<Ref, Ref> insertPage(Page *page, int num);
+    std::map<Ref, Ref> insertPage(Page *page, int num, std::optional<std::map<Ref, Ref>> &refMap);
+    void removePage(Page *page);
+
 private:
     // insert referenced objects in XRef
     bool markDictionary(Dict *dict, XRef *xRef, XRef *countRef, unsigned int numOffset, int oldRefNum, int newRefNum, std::set<Dict *> *alreadyMarkedDicts);

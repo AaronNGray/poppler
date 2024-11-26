@@ -2271,6 +2271,30 @@ std::optional<PDFDoc::SignatureData> PDFDoc::createSignature(::Page *destPage, s
     return SignatureData { { ref.num, ref.gen }, signatureAnnot, formWidget, std::move(field) };
 }
 
+std::map<Ref, Ref> PDFDoc::insertPage(Page *page, int num)
+{
+    if (isLinearized()) {
+        resetLinearization();
+    }
+    return getCatalog()->insertPage(page, num);
+}
+
+std::map<Ref, Ref> PDFDoc::insertPage(Page *page, int num, std::optional<std::map<Ref, Ref>> &refMap)
+{
+    if (isLinearized()) {
+        resetLinearization();
+    }
+    return getCatalog()->insertPage(page, num, refMap);
+}
+
+void PDFDoc::removePage(Page *page)
+{
+    if (isLinearized()) {
+        resetLinearization();
+    }
+    getCatalog()->removePage(page);
+}
+
 std::optional<CryptoSign::SigningError> PDFDoc::sign(const std::string &saveFilename, const std::string &certNickname, const std::string &password, std::unique_ptr<GooString> &&partialFieldName, int page, const PDFRectangle &rect,
                                                      const GooString &signatureText, const GooString &signatureTextLeft, double fontSize, double leftFontSize, std::unique_ptr<AnnotColor> &&fontColor, double borderWidth,
                                                      std::unique_ptr<AnnotColor> &&borderColor, std::unique_ptr<AnnotColor> &&backgroundColor, const GooString *reason, const GooString *location, const std::string &imagePath,
