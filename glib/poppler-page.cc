@@ -66,7 +66,6 @@ PopplerPage *_poppler_page_new(PopplerDocument *document, Page *page, int index)
     poppler_page = (PopplerPage *)g_object_new(POPPLER_TYPE_PAGE, nullptr, NULL);
     poppler_page->document = (PopplerDocument *)g_object_ref(document);
     poppler_page->page = page;
-    poppler_page->index = index;
 
     return poppler_page;
 }
@@ -130,7 +129,7 @@ int poppler_page_get_index(PopplerPage *page)
 {
     g_return_val_if_fail(POPPLER_IS_PAGE(page), 0);
 
-    return page->index;
+    return page->page->getNum() - 1;
 }
 
 /**
@@ -151,7 +150,7 @@ gchar *poppler_page_get_label(PopplerPage *page)
 
     g_return_val_if_fail(POPPLER_IS_PAGE(page), NULL);
 
-    page->document->doc->getCatalog()->indexToLabel(page->index, &label);
+    page->document->doc->getCatalog()->indexToLabel(poppler_page_get_index(page), &label);
     return _poppler_goo_string_to_utf8(&label);
 }
 
@@ -1068,7 +1067,7 @@ void poppler_page_render_to_ps(PopplerPage *page, PopplerPSFile *ps_file)
         }
     }
 
-    ps_file->document->doc->displayPage(ps_file->out, page->index + 1, 72.0, 72.0, 0, false, true, false);
+    ps_file->document->doc->displayPage(ps_file->out, poppler_page_get_index(page) + 1, 72.0, 72.0, 0, false, true, false);
 }
 
 static void poppler_page_get_property(GObject *object, guint prop_id, GValue *value, GParamSpec *pspec)
