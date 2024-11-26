@@ -603,6 +603,12 @@ PopplerAnnot *_poppler_annot_free_text_new(Annot *annot)
         std::shared_ptr<GfxFont> font = poppler_annot_lookup_font(annot, desc->font_name);
         if (font && font->getName()) {
             poppler_font_name_to_description(font->getName().value(), *desc);
+        } else {
+            const char *fallback_name = Annot::determineFallbackFont(std::string(desc->font_name), desc->font_name);
+            if (fallback_name != desc->font_name && strcmp(fallback_name, desc->font_name) != 0) {
+                g_free(desc->font_name);
+                desc->font_name = g_strdup(fallback_name);
+            }
         }
     }
 
