@@ -392,6 +392,9 @@ private:
     bool checkEncryption(const std::optional<GooString> &ownerPassword, const std::optional<GooString> &userPassword);
     void extractPDFSubtype();
 
+    // Remove linearization
+    void resetLinearization();
+
     // Get the offset of the start xref table.
     Goffset getStartXRef(bool tryingToReconstruct = false);
     // Get the offset of the entries in the main XRef table of a

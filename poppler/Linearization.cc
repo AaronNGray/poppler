@@ -24,22 +24,25 @@
 Linearization::Linearization(BaseStream *str)
 {
     Parser *parser;
-
-    (void)str->reset();
-    parser = new Parser(nullptr, str->makeSubStream(str->getStart(), false, 0, Object(objNull)), false);
-    Object obj1 = parser->getObj();
-    Object obj2 = parser->getObj();
-    Object obj3 = parser->getObj();
-    linDict = parser->getObj();
-    if (obj1.isInt() && obj2.isInt() && obj3.isCmd("obj") && linDict.isDict()) {
-        Object obj5 = linDict.dictLookup("Linearized");
-        if (!(obj5.isNum() && obj5.getNum() > 0)) {
+    if (!str) { // This means linearization is explicitly disabled
+        linDict.setToNull();
+    } else {
+        (void)str->reset();
+        parser = new Parser(nullptr, str->makeSubStream(str->getStart(), false, 0, Object(objNull)), false);
+        Object obj1 = parser->getObj();
+        Object obj2 = parser->getObj();
+        Object obj3 = parser->getObj();
+        linDict = parser->getObj();
+        if (obj1.isInt() && obj2.isInt() && obj3.isCmd("obj") && linDict.isDict()) {
+            Object obj5 = linDict.dictLookup("Linearized");
+            if (!(obj5.isNum() && obj5.getNum() > 0)) {
+                linDict.setToNull();
+            }
+        } else {
             linDict.setToNull();
         }
-    } else {
-        linDict.setToNull();
+        delete parser;
     }
-    delete parser;
 }
 
 Linearization::~Linearization() = default;
