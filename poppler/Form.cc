@@ -626,6 +626,9 @@ static bool hashFileRange(FILE *f, CryptoSign::SigningInterface *handler, Goffse
 std::optional<CryptoSign::SigningError> FormWidgetSignature::signDocument(const std::string &saveFilename, const std::string &certNickname, const std::string &password, const GooString *reason, const GooString *location,
                                                                           const std::optional<GooString> &ownerPassword, const std::optional<GooString> &userPassword)
 {
+    // say that there are now signatures and that we should append only
+    doc->getCatalog()->getAcroForm()->dictSet("SigFlags", Object(3));
+
     auto backend = CryptoSign::Factory::createActive();
     if (!backend) {
         return CryptoSign::SigningError::InternalError;
@@ -788,9 +791,6 @@ std::optional<CryptoSign::SigningError> FormWidgetSignature::signDocumentWithApp
     ffs->setCustomAppearanceContent(signatureText);
     ffs->setCustomAppearanceLeftContent(signatureTextLeft);
     ffs->setCustomAppearanceLeftFontSize(leftFontSize);
-
-    // say that there a now signatures and that we should append only
-    doc->getCatalog()->getAcroForm()->dictSet("SigFlags", Object(3));
 
     auto signingResult = signDocument(saveFilename, certNickname, password, reason, location, ownerPassword, userPassword);
 

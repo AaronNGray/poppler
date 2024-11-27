@@ -2280,9 +2280,6 @@ std::optional<CryptoSign::SigningError> PDFDoc::sign(const std::string &saveFile
 
     sig->annotWidget->setFlags(sig->annotWidget->getFlags() | Annot::flagLocked);
 
-    // say that there a now signatures and that we should append only
-    catalog->getAcroForm()->dictSet("SigFlags", Object(3));
-
     destPage->addAnnot(sig->annotWidget);
 
     FormWidgetSignature *fws = dynamic_cast<FormWidgetSignature *>(sig->formWidget);
