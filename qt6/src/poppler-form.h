@@ -905,6 +905,17 @@ public:
      */
     SigningResult sign(const QString &outputFileName, const PDFConverter::NewSignatureData &data) const;
 
+    /**
+      Signs a field of UnsignedSignature type.
+
+      Ignores data.page(), data.fieldPartialName(), data.boundingRectangle(), and appearance properties like font and border color and size
+
+      Use this over sign() when there already is a signature annotation whose appearance should be preserved
+
+      \since 25.01
+     */
+    SigningResult signWithoutAppearance(const QString &outputFileName, const PDFConverter::NewSignatureData &data) const;
+
 private:
     Q_DISABLE_COPY(FormFieldSignature)
 };

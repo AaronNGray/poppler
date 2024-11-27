@@ -1214,6 +1214,43 @@ FormFieldSignature::SigningResult FormFieldSignature::sign(const QString &output
     return SigningSuccess;
 }
 
+FormFieldSignature::SigningResult FormFieldSignature::signWithoutAppearance(const QString &outputFileName, const PDFConverter::NewSignatureData &data) const
+{
+    FormWidgetSignature *fws = static_cast<FormWidgetSignature *>(m_formData->fm);
+    if (fws->signatureType() != CryptoSign::SignatureType::unsigned_signature_field) {
+        return FieldAlreadySigned;
+    }
+
+    Goffset file_size = 0;
+    const std::optional<GooString> sig = fws->getCheckedSignature(&file_size);
+    if (sig) {
+        // the above unsigned_signature_field check
+        // should already catch this, but double check
+        return FieldAlreadySigned;
+    }
+    const auto reason = std::unique_ptr<GooString>(data.reason().isEmpty() ? nullptr : QStringToUnicodeGooString(data.reason()));
+    const auto location = std::unique_ptr<GooString>(data.location().isEmpty() ? nullptr : QStringToUnicodeGooString(data.location()));
+    const auto ownerPwd = std::optional<GooString>(data.documentOwnerPassword().constData());
+    const auto userPwd = std::optional<GooString>(data.documentUserPassword().constData());
+
+    const auto failure = fws->signDocument(outputFileName.toStdString(), data.certNickname().toStdString(), data.password().toStdString(), reason.get(), location.get(), ownerPwd, userPwd);
+    if (failure) {
+        switch (failure.value()) {
+        case CryptoSign::SigningError::GenericError:
+            return GenericSigningError;
+        case CryptoSign::SigningError::InternalError:
+            return InternalError;
+        case CryptoSign::SigningError::KeyMissing:
+            return KeyMissing;
+        case CryptoSign::SigningError::UserCancelled:
+            return UserCancelled;
+        case CryptoSign::SigningError::WriteFailed:
+            return WriteFailed;
+        }
+    }
+    return SigningSuccess;
+}
+
 bool hasNSSSupport()
 {
 #ifdef ENABLE_NSS3
