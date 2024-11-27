@@ -2958,7 +2958,6 @@ Annot *SignatureAnnotationPrivate::createNativeAnnot(::Page *destPage, DocumentD
         return nullptr;
     }
 
-    sig->formWidget->updateWidgetAppearance();
     field = std::move(sig->field);
 
     // Set properties
