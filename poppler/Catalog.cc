@@ -1361,6 +1361,15 @@ std::map<Ref, Ref> Catalog::insertPage(Page *page, int pageNum, std::optional<st
     Ref pageRef = page->getRef();
     auto pageDoc = page->getDoc();
 
+    if (pageDoc->getPDFMajorVersion() > catalogPdfMajorVersion) {
+        catalogPdfMinorVersion = pageDoc->getPDFMinorVersion();
+        catalogPdfMajorVersion = pageDoc->getPDFMajorVersion();
+        forcedRewrite = true;
+    } else if (pageDoc->getPDFMajorVersion() == catalogPdfMajorVersion && catalogPdfMinorVersion < pageDoc->getPDFMinorVersion()) {
+        catalogPdfMinorVersion = pageDoc->getPDFMinorVersion();
+        forcedRewrite = true;
+    }
+
     if (pageNum < 0) {
         pageNum = getNumPages() + 1;
     }

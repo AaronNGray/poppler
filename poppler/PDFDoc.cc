@@ -1026,8 +1026,9 @@ int PDFDoc::saveAs(OutStream *outStr, PDFWriteMode mode)
     if (!xref->isModified() && mode == writeStandard) {
         // simply copy the original file
         saveWithoutChangesAs(outStr);
-    } else if (mode == writeForceRewrite) {
+    } else if (mode == writeForceRewrite || catalog->needForcedRewrite()) {
         saveCompleteRewrite(outStr);
+        catalog->resetForcedRewrite();
     } else {
         saveIncrementalUpdate(outStr);
     }

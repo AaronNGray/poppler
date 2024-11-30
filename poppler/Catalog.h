@@ -274,6 +274,9 @@ public:
     std::map<Ref, Ref> insertPage(Page *page, int num, std::optional<std::map<Ref, Ref>> &refMap);
     void removePage(Page *page);
 
+    bool needForcedRewrite() { return forcedRewrite; }
+    void resetForcedRewrite() { forcedRewrite = false; }
+
 private:
     // Get page label info.
     PageLabelInfo *getPageLabelInfo();
@@ -322,6 +325,7 @@ private:
 
     int catalogPdfMajorVersion = -1;
     int catalogPdfMinorVersion = -1;
+    bool forcedRewrite = false; // this is set to true when pdf major/minor are changed
 
     mutable std::recursive_mutex mutex;
 };

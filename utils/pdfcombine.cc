@@ -121,7 +121,7 @@ int main(int argc, char *argv[])
     }
 
     outStr = new FileOutStream(f, 0);
-    docs[0]->saveAs(outStr, writeForceRewrite);
+    docs[0]->saveAs(outStr);
     outStr->close();
     fclose(f);
     delete outStr;
