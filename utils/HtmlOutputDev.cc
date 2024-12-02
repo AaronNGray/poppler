@@ -1314,12 +1314,11 @@ void HtmlOutputDev::drawJpegImage(GfxState *state, Stream *str)
 
     // copy the stream
     while (true) {
-        int nChars;
-        unsigned char *data = str->getSomeBufferedChars(&nChars);
-        if (nChars == 0) {
+        auto data = str->getSomeBufferedChars();
+        if (data.empty()) {
             break;
         }
-        fwrite(data, 1, nChars, f1);
+        fwrite(data.data(), 1, data.size(), f1);
     }
 
     fclose(f1);

@@ -346,7 +346,6 @@ gboolean poppler_media_save_to_fd(PopplerMedia *poppler_media, int fd, GError **
 gboolean poppler_media_save_to_callback(PopplerMedia *poppler_media, PopplerMediaSaveFunc save_func, gpointer user_data, GError **error)
 {
     Stream *stream;
-    int i;
 
     g_return_val_if_fail(POPPLER_IS_MEDIA(poppler_media), FALSE);
     g_return_val_if_fail(poppler_media->stream.isStream(), FALSE);
@@ -355,11 +354,11 @@ gboolean poppler_media_save_to_callback(PopplerMedia *poppler_media, PopplerMedi
     stream->reset();
 
     while (true) {
-        auto chars = stream->getSomeBufferedChars(&i);
-        if (i == 0) {
+        auto chars = stream->getSomeBufferedChars();
+        if (chars.empty()) {
             return TRUE;
         }
-        if (!(save_func)((gchar *)chars, i, user_data, error)) {
+        if (!(save_func)((gchar *)chars.data(), chars.size(), user_data, error)) {
             stream->close();
             return FALSE;
         }

@@ -173,27 +173,26 @@ public:
         }
     }
 
-    unsigned char *getSomeBufferedChars(int *nCharsOut)
+    // Retrieve and consume some data from the internal buffer.
+    std::span<unsigned char> getSomeBufferedChars()
     {
         if (bufPtr == bufEnd) {
             fillCacheBuf();
         }
-        *nCharsOut = bufEnd - bufPtr;
-        auto res = bufPtr;
+        std::span<unsigned char> res { bufPtr, static_cast<size_t>(bufEnd - bufPtr) };
         bufPtr = bufEnd;
         return res;
     }
 
     inline void fillString(std::string &s)
     {
-        int readChars;
         reset();
         while (true) {
-            auto chars = getSomeBufferedChars(&readChars);
-            if (readChars == 0) {
+            auto chars = getSomeBufferedChars();
+            if (chars.empty()) {
                 return;
             }
-            s.append((const char *)chars, readChars);
+            s.append((const char *)chars.data(), chars.size());
         }
     }
 
@@ -289,7 +288,10 @@ public:
     // Returns true if this stream includes a crypt filter.
     bool isEncrypted() const;
 
-    // May always return less than nChars, only a return of 0 indicates an EOF.
+    // Input is a buffer to fill, returns the number of bytes that were
+    // actually read.
+    // May always return less than nChars, only a return of 0 indicates
+    // an EOF.
     virtual int getSomeChars(int nChars, unsigned char *buffer) = 0;
 
     virtual Goffset getRawPos() = 0;
@@ -465,7 +467,7 @@ private:
 class FilterStream : public Stream
 {
 public:
-    // If asPredictedStream returns a new object, that one then owns the previous one.
+    // Returns either this or a new object (which then owns this FilterStream).
     Stream *asPredictedStream(int predictor, int columns, int colors, int bits);
 
     explicit FilterStream(Stream *strA);

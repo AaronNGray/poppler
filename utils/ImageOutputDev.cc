@@ -347,12 +347,11 @@ void ImageOutputDev::writeRawImage(Stream *str, const char *ext)
 
     // copy the stream
     while (true) {
-        int nChars;
-        unsigned char *data = str->getSomeBufferedChars(&nChars);
-        if (nChars == 0) {
+        auto data = str->getSomeBufferedChars();
+        if (data.empty()) {
             break;
         }
-        fwrite(data, 1, nChars, f);
+        fwrite(data.data(), 1, data.size(), f);
     }
 
     str->close();

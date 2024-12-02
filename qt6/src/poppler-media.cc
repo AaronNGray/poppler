@@ -91,12 +91,11 @@ QByteArray MediaRendition::data() const
     buffer.open(QIODevice::WriteOnly);
     s->reset();
     while (true) {
-        int nChars;
-        unsigned char *data = s->getSomeBufferedChars(&nChars);
-        if (nChars == 0) {
+        auto data = s->getSomeBufferedChars();
+        if (data.empty()) {
             break;
         }
-        buffer.write(reinterpret_cast<const char *>(data), nChars);
+        buffer.write(reinterpret_cast<const char *>(data.data()), data.size());
     }
     buffer.close();
 
