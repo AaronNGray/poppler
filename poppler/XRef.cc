@@ -1460,6 +1460,7 @@ void XRef::setModifiedObject(const Object *o, Ref r)
     e->obj = o->copy();
     e->setFlag(XRefEntry::Updated, true);
     setModified();
+    cache.invalidateRef(r);
 }
 
 Ref XRef::addIndirectObject(const Object &o)
@@ -1512,6 +1513,7 @@ void XRef::removeIndirectObject(Ref r)
     }
     e->setFlag(XRefEntry::Updated, true);
     setModified();
+    cache.invalidateRef(r);
 }
 
 Ref XRef::addStreamObject(Dict *dict, char *buffer, const Goffset bufferSize, StreamCompression compression)

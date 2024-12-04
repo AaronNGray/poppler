@@ -4171,7 +4171,15 @@ void Gfx::doImage(Object *ref, Stream *str, bool inlineImg)
         jpxStream->setSupportJPXtransparency(true);
     }
 #endif
-    str->getImageParams(&bits, &csMode, &hasAlpha);
+    if (xref->cache.imgInfoCache.contains(ref)) {
+        auto info = xref->cache.imgInfoCache.get(ref->getRef());
+        bits = std::get<0>(info);
+        csMode = std::get<1>(info);
+        hasAlpha = std::get<2>(info);
+    } else {
+        str->getImageParams(&bits, &csMode, &hasAlpha);
+        xref->cache.imgInfoCache.set(ref, { bits, csMode, hasAlpha });
+    }
 
     // get stream dict
     dict = str->getDict();
