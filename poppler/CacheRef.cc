@@ -101,10 +101,17 @@ V &GenericCache<V>::get(Ref c)
 
 void CacheRef::invalidateRef(Ref r)
 {
+#ifdef HAVE_CAIRO
+    if (cairoSurface) {
+        cairoSurface->remove(r);
+    }
+#endif
     imgInfoCache.remove(r);
 }
 
-FreeableObject::~FreeableObject() { }
-
 template class GenericCache<imgInfo>;
+
+#ifdef HAVE_CAIRO
+FreeableObject::~FreeableObject() { }
 template class GenericCache<std::unique_ptr<FreeableObject>>;
+#endif

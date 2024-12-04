@@ -39,6 +39,7 @@
 #define CAIROOUTPUTDEV_H
 
 #include <unordered_set>
+#include "CacheRef.h"
 
 #include <cairo-ft.h>
 #include "OutputDev.h"
@@ -62,14 +63,14 @@ class CairoFont;
 //------------------------------------------------------------------------
 // CairoImage
 //------------------------------------------------------------------------
-class CairoImage
+class CairoImage : public FreeableObject
 {
 public:
     // Constructor.
     CairoImage(double x1, double y1, double x2, double y2);
 
     // Destructor.
-    ~CairoImage();
+    ~CairoImage() override;
 
     CairoImage(const CairoImage &) = delete;
     CairoImage &operator=(const CairoImage &) = delete;
@@ -401,6 +402,8 @@ protected:
     std::unordered_set<std::pair<int, int>, StructParentsMcidHash> mcidEmitted; // <structParent, MCID>
 
     std::unordered_set<const StructElement *> structElementNeeded;
+
+    GenericCache<std::unique_ptr<FreeableObject>> *cairoSurfaceCache;
 };
 
 //------------------------------------------------------------------------

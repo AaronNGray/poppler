@@ -56,7 +56,19 @@ private:
 // Image information: bits, color space, has alpha. See Gfx
 typedef std::tuple<int, StreamColorSpaceMode, bool> imgInfo;
 
+#ifdef HAVE_CAIRO
+/* A class that may be used to automatically free heap-allocated data (such as
+cairo surfaces allocated and freed by C functions). */
+class POPPLER_PRIVATE_EXPORT FreeableObject
+{
+public:
+    FreeableObject(const FreeableObject &) = delete;
+    FreeableObject &operator=(const FreeableObject &) = delete;
 
+    virtual ~FreeableObject();
+    FreeableObject() { }
+};
+#endif
 
 class POPPLER_PRIVATE_EXPORT CacheRef
 {
@@ -64,4 +76,8 @@ public:
     void invalidateRef(Ref r);
     // This cache is used in Gfx.cc and holds some image information
     GenericCache<imgInfo> imgInfoCache;
+#ifdef HAVE_CAIRO
+    // Raw cairo surfaces
+    std::unique_ptr<GenericCache<std::unique_ptr<FreeableObject>>> cairoSurface = nullptr;
+#endif
 };
