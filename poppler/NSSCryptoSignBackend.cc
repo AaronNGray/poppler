@@ -619,7 +619,7 @@ static std::unique_ptr<X509CertificateInfo> getCertificateInfoFromCERT(CERTCerti
     certInfo->setSubjectInfo(getEntityInfo(&cert->subject));
 
     // nickname (as a handle to refer to the CERT later)
-    certInfo->setNickName(GooString(cert->dbnickname));
+    certInfo->setNickName(GooString(cert->dbnickname != nullptr ? cert->dbnickname : cert->nickname));
 
     // public key info
     X509CertificateInfo::PublicKeyInfo pkInfo;
