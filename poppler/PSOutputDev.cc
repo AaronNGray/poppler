@@ -56,6 +56,7 @@
 #include <climits>
 #include <algorithm>
 #include <array>
+#include <regex>
 #include "goo/GooString.h"
 #include "poppler-config.h"
 #include "GlobalParams.h"
@@ -1951,8 +1952,25 @@ void PSOutputDev::setupFont(GfxFont *font, Dict *parentResDict)
             case gfxFontLocEmbedded:
                 switch (fontLoc->fontType) {
                 case fontType1:
-                    // this assumes that the PS font name matches the PDF font name
-                    psName = font->getEmbeddedFontName() ? font->getEmbeddedFontName()->copy() : new GooString();
+                    {
+                        // Check whether it is a base font or not.
+                        // If not, and since we have checked fontIDs already,
+                        // we play safe and assume to face a unique font that has
+                        // not been embedded yet. As such we make a unique ps
+                        // font name.
+                        bool isbasefont = false;
+                        for (i = 0; i < 14; ++i) {
+                            if (font->getEmbeddedFontName()->cmp(psBase14SubstFonts[i].psName) == 0) {
+                                isbasefont = true;
+                                break;
+                            }
+                        }
+                        if (!isbasefont) {
+                            psName = makePSFontName(font, &fontLoc->embFontID);
+                        } else {
+                            psName = font->getEmbeddedFontName()->copy();
+                        }
+                    }
                     setupEmbeddedType1Font(&fontLoc->embFontID, psName);
                     break;
                 case fontType1C:
@@ -2103,11 +2121,6 @@ void PSOutputDev::setupEmbeddedType1Font(Ref *id, GooString *psName)
     bool binMode;
     bool writePadding = true;
 
-    // check if font is already embedded
-    if (!fontNames.emplace(psName->toStr()).second) {
-        return;
-    }
-
     // get the font stream and info
     Object obj1, obj2, obj3;
     Object refObj(*id);
@@ -2144,9 +2157,38 @@ void PSOutputDev::setupEmbeddedType1Font(Ref *id, GooString *psName)
     } else {
         strObj.streamReset();
     }
+
     // copy ASCII portion of font
-    for (i = 0; i < length1 && (c = strObj.streamGetChar()) != EOF; ++i) {
-        writePSChar(c);
+    {
+        std::vector<char> chars;
+        chars.resize(length1);
+        int actuallength1 = strObj.getStream()->doGetChars(length1,
+                reinterpret_cast<unsigned char*>(&chars[0]));
+        std::string asciiportion(chars.begin(), chars.begin()+actuallength1);
+
+        // Changing the FontName of a Type1 font is not so easy, since in
+        // principle it is mostly valid Postscript, which is copied verbatim
+        // to the resulting Postscript file. However, many fonts seem to
+        // follow the blueprint as described in Adobe's "Adobe Type 1 Font
+        // Format" manual. In particular, within the encrypted "eexec" portion
+        // these fonts contain code like
+        //      dup /FontName get exch definefont pop
+        // As such the /FontName is registered in fontdict. And the current
+        // machinery of "pdfMakeFont" in setupFont, which follows this embedding
+        // of a Type1 font, relies on this behavior as well. As such we need to
+        // change /FontName when it is defined.
+        //
+        // In what follows we match FoFiType1::parse's behavior to determine
+        // the embedded /FontName, i.e., we search for a newline that starts
+        // with "/FontName" succeeded by the font name.
+        if (psName->getLength()) {
+            std::string newasciiportion = std::regex_replace(asciiportion,
+                    std::regex("^/FontName[\\s]+/[^\\s]+[\\s]+def", std::regex::multiline),
+                    std::string("/FontName /") + psName->toStr() + std::string(" def"));
+            asciiportion = newasciiportion;
+        }
+
+        writePS(asciiportion.c_str());
     }
 
     // figure out if encrypted portion is binary or ASCII
