@@ -1242,6 +1242,59 @@ std::unique_ptr<CryptoSign::SigningInterface> NSSCryptoSignBackend::createSignin
     return std::make_unique<NSSSignatureCreation>(certID, digestAlgTag);
 }
 
+// Check if cert can be used for signing
+static bool canSign(CERTCertificate *cert)
+{
+    bool canSign;
+    SECItem eku;
+    CERTOidSequence *extKeyUsage;
+
+    if (!CERT_IsUserCert(cert)) {
+        return false;
+    }
+
+    // Key Usage
+    if (CERT_CheckCertUsage(cert, KU_DIGITAL_SIGNATURE | KU_NON_REPUDIATION) != SECSuccess) {
+        return false;
+    }
+
+    // Extended Key Usage
+    if (CERT_FindCertExtension(cert, SEC_OID_X509_EXT_KEY_USAGE, &eku) != SECSuccess) {
+        return true;
+    }
+
+    extKeyUsage = CERT_DecodeOidSequence(&eku);
+    if (!extKeyUsage) {
+        PORT_Free(eku.data);
+        return false;
+    }
+
+    // EKU present, can do signing only if explicitly specified in EKU.
+    canSign = false;
+    for (SECItem **oids = extKeyUsage->oids; *oids != nullptr; oids++) {
+        switch (SECOID_FindOIDTag(*oids)) {
+        case SEC_OID_EXT_KEY_USAGE_EMAIL_PROTECT:
+            canSign = true;
+            break;
+        case SEC_OID_EXT_KEY_USAGE_SERVER_AUTH:
+        case SEC_OID_EXT_KEY_USAGE_CLIENT_AUTH:
+        case SEC_OID_EXT_KEY_USAGE_CODE_SIGN:
+        case SEC_OID_EXT_KEY_USAGE_TIME_STAMP:
+            // Known OIDs, just ignore
+            break;
+        case SEC_OID_UNKNOWN:
+        default:
+            // Unknown OID, should it fail if extension is marked critical?
+            break;
+        }
+    }
+
+    CERT_DestroyOidSequence(extKeyUsage);
+    PORT_Free(eku.data);
+
+    return canSign;
+}
+
 std::vector<std::unique_ptr<X509CertificateInfo>> NSSCryptoSignBackend::getAvailableSigningCertificates()
 {
     // set callback, in case one of the slots has a password set
@@ -1253,6 +1306,18 @@ std::vector<std::unique_ptr<X509CertificateInfo>> NSSCryptoSignBackend::getAvail
     if (slotList) {
         for (PK11SlotListElement *slotElement = slotList->head; slotElement; slotElement = slotElement->next) {
             PK11SlotInfo *pSlot = slotElement->slot;
+
+            CERTCertList *certList = PK11_ListCertsInSlot(pSlot);
+            if (certList && !CERT_LIST_EMPTY(certList)) {
+                for (CERTCertListNode *curCert = CERT_LIST_HEAD(certList); !CERT_LIST_END(curCert, certList) && curCert != nullptr; curCert = CERT_LIST_NEXT(curCert)) {
+                    if (canSign(curCert->cert)) {
+                        certsList.push_back(getCertificateInfoFromCERT(curCert->cert));
+                    }
+                }
+                CERT_DestroyCertList(certList);
+                continue;
+            }
+
             if (PK11_NeedLogin(pSlot)) {
                 SECStatus nRet = PK11_Authenticate(pSlot, PR_TRUE, nullptr);
                 // PK11_Authenticate may fail in case the a slot has not been initialized.
