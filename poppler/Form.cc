@@ -1697,13 +1697,26 @@ void FormFieldText::setContentCopy(const GooString *new_content)
                 if (!fontName.empty()) {
                     // Use the field resource dictionary if it exists
                     Object fieldResourcesDictObj = obj.dictLookup("DR");
+                    Object defaultAPresourcesDictObj = getWidget(0) ? getWidget(0)->getWidgetAnnotation()->getAppearanceResDict() : Object(objNull);
+                    std::unique_ptr<GfxResources> resources, resourceNext;
                     if (fieldResourcesDictObj.isDict()) {
-                        GfxResources fieldResources(doc->getXRef(), fieldResourcesDictObj.getDict(), form->getDefaultResources());
-                        const std::vector<Form::AddFontResult> newFonts = form->ensureFontsForAllCharacters(content.get(), fontName, &fieldResources);
-                        // If we added new fonts to the Form object default resuources we also need to add them (we only add the ref so this is cheap)
+                        if (defaultAPresourcesDictObj.isDict()) {
+                            resourceNext = std::make_unique<GfxResources>(doc->getXRef(), defaultAPresourcesDictObj.getDict(), form->getDefaultResources());
+                        }
+                        GfxResources *res = resourceNext ? resourceNext.get() : form->getDefaultResources();
+                        resources = std::make_unique<GfxResources>(doc->getXRef(), fieldResourcesDictObj.getDict(), res);
+                    } else if (defaultAPresourcesDictObj.isDict()) {
+                        resources = std::make_unique<GfxResources>(doc->getXRef(), defaultAPresourcesDictObj.getDict(), form->getDefaultResources());
+                    }
+
+                    if (resources) {
+                        const std::vector<Form::AddFontResult> newFonts = form->ensureFontsForAllCharacters(content.get(), fontName, resources.get());
+                        // If we added new fonts to the Form object default resources we also need to add them (we only add the ref so this is cheap)
                         // to the field DR dictionary
-                        for (const Form::AddFontResult &afr : newFonts) {
-                            fieldResourcesDictObj.dictLookup("Font").dictAdd(afr.fontName.c_str(), Object(afr.ref));
+                        if (fieldResourcesDictObj.isDict()) {
+                            for (const Form::AddFontResult &afr : newFonts) {
+                                fieldResourcesDictObj.dictLookup("Font").dictAdd(afr.fontName.c_str(), Object(afr.ref));
+                            }
                         }
                     } else {
                         form->ensureFontsForAllCharacters(content.get(), fontName);
