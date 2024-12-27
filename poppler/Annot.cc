@@ -5378,6 +5378,22 @@ static void recursiveMergeDicts(Dict *primary, const Dict *secondary)
     recursiveMergeDicts(primary, secondary, &alreadySeenDicts);
 }
 
+static void recursiveSetIndirectObjectsUpdated(Dict *primary, PDFDoc *doc)
+{
+    for (int i = 0; i < primary->getLength(); ++i) {
+        const char *key = primary->getKey(i);
+        Ref primaryRef;
+        Object primaryObj = primary->lookup(key, &primaryRef);
+        if (primaryRef != Ref::INVALID()) {
+            XRefEntry *ent = doc->getXRef()->getEntry(primaryRef.num);
+            ent->setFlag(XRefEntry::Updated, true);
+        }
+        if (primaryObj.isDict()) {
+            recursiveSetIndirectObjectsUpdated(primaryObj.getDict(), doc);
+        }
+    }
+}
+
 void AnnotWidget::generateFieldAppearance()
 {
     const GooString *da;
@@ -5466,6 +5482,13 @@ void AnnotWidget::generateFieldAppearance()
         // In addition, we keep the appearState of checkboxes to prevent them from being deselected
         bool keepAppearState = field->getType() == formButton && static_cast<const FormFieldButton *>(field)->getButtonType() == formButtonCheck;
         setNewAppearance(Object(appearStream), keepAppearState);
+        Object resourcesObj = appearDict->lookup("Resources");
+        if (resourcesObj.isDict()) {
+            // Previous recursiveMergeDicts() call may have updated indirect objects
+            // inside Resources dict, we need to mark those indirect objects as "updated"
+            // otherwise they won't be copied over when "saving the pdf" - Issue #1549
+            recursiveSetIndirectObjectsUpdated(resourcesObj.getDict(), doc);
+        }
     } else {
         appearance = Object(appearStream);
     }
