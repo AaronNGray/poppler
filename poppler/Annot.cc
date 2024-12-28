@@ -5347,37 +5347,6 @@ bool AnnotAppearanceBuilder::drawFormFieldChoice(const FormFieldChoice *fieldCho
     return true;
 }
 
-// Should we also merge Arrays?
-static void recursiveMergeDicts(Dict *primary, const Dict *secondary, RefRecursionChecker *alreadySeenDicts)
-{
-    for (int i = 0; i < secondary->getLength(); ++i) {
-        const char *key = secondary->getKey(i);
-        if (!primary->hasKey(key)) {
-            primary->add(key, secondary->lookup(key).deepCopy());
-        } else {
-            Ref primaryRef;
-            Object primaryObj = primary->lookup(key, &primaryRef);
-            if (primaryObj.isDict()) {
-                Ref secondaryRef;
-                Object secondaryObj = secondary->lookup(key, &secondaryRef);
-                if (secondaryObj.isDict()) {
-                    if (!alreadySeenDicts->insert(primaryRef) || !alreadySeenDicts->insert(secondaryRef)) {
-                        // bad PDF
-                        return;
-                    }
-                    recursiveMergeDicts(primaryObj.getDict(), secondaryObj.getDict(), alreadySeenDicts);
-                }
-            }
-        }
-    }
-}
-
-static void recursiveMergeDicts(Dict *primary, const Dict *secondary)
-{
-    RefRecursionChecker alreadySeenDicts;
-    recursiveMergeDicts(primary, secondary, &alreadySeenDicts);
-}
-
 static void recursiveSetIndirectObjectsUpdated(Dict *primary, PDFDoc *doc)
 {
     for (int i = 0; i < primary->getLength(); ++i) {
@@ -5434,7 +5403,7 @@ void AnnotWidget::generateFieldAppearance()
         if (resourcesDictObj.isDict()) {
             if (form && form->getDefaultResourcesObj()->isDict()) {
                 resourcesDictObj = resourcesDictObj.deepCopy();
-                recursiveMergeDicts(resourcesDictObj.getDict(), form->getDefaultResourcesObj()->getDict());
+                Dict::recursiveMergeDicts(resourcesDictObj.getDict(), form->getDefaultResourcesObj()->getDict());
             }
             resourcesToFree = std::make_unique<GfxResources>(doc->getXRef(), resourcesDictObj.getDict(), nullptr);
             resources = resourcesToFree.get();

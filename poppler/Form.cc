@@ -1698,13 +1698,16 @@ void FormFieldText::setContentCopy(const GooString *new_content)
                     // Use the field resource dictionary if it exists
                     Object fieldResourcesDictObj = obj.dictLookup("DR");
                     Object defaultAPresourcesDictObj = getWidget(0) ? getWidget(0)->getWidgetAnnotation()->getAppearanceResDict() : Object(objNull);
-                    std::unique_ptr<GfxResources> resources, resourceNext;
+                    std::unique_ptr<GfxResources> resources, resAP;
                     if (fieldResourcesDictObj.isDict()) {
-                        if (defaultAPresourcesDictObj.isDict()) {
-                            resourceNext = std::make_unique<GfxResources>(doc->getXRef(), defaultAPresourcesDictObj.getDict(), form->getDefaultResources());
+                        if (form->getDefaultResourcesObj()->isDict()) {
+                            fieldResourcesDictObj = fieldResourcesDictObj.deepCopy();
+                            Dict::recursiveMergeDicts(fieldResourcesDictObj.getDict(), form->getDefaultResourcesObj()->getDict());
                         }
-                        GfxResources *res = resourceNext ? resourceNext.get() : form->getDefaultResources();
-                        resources = std::make_unique<GfxResources>(doc->getXRef(), fieldResourcesDictObj.getDict(), res);
+                        if (defaultAPresourcesDictObj.isDict()) {
+                            resAP = std::make_unique<GfxResources>(doc->getXRef(), defaultAPresourcesDictObj.getDict(), nullptr);
+                        }
+                        resources = std::make_unique<GfxResources>(doc->getXRef(), fieldResourcesDictObj.getDict(), resAP ? resAP.get() : nullptr);
                     } else if (defaultAPresourcesDictObj.isDict()) {
                         resources = std::make_unique<GfxResources>(doc->getXRef(), defaultAPresourcesDictObj.getDict(), form->getDefaultResources());
                     }
