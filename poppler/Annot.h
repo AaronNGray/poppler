@@ -1015,7 +1015,7 @@ private:
 // AnnotLink
 //------------------------------------------------------------------------
 
-class AnnotLink : public Annot
+class POPPLER_PRIVATE_EXPORT AnnotLink : public Annot
 {
 public:
     enum AnnotLinkEffect
@@ -1395,7 +1395,7 @@ private:
 // AnnotFileAttachment
 //------------------------------------------------------------------------
 
-class AnnotFileAttachment : public AnnotMarkup
+class POPPLER_PRIVATE_EXPORT AnnotFileAttachment : public AnnotMarkup
 {
 public:
     AnnotFileAttachment(PDFDoc *docA, PDFRectangle *rect, GooString *filename);
@@ -1422,7 +1422,7 @@ private:
 // AnnotSound
 //------------------------------------------------------------------------
 
-class AnnotSound : public AnnotMarkup
+class POPPLER_PRIVATE_EXPORT AnnotSound : public AnnotMarkup
 {
 public:
     AnnotSound(PDFDoc *docA, PDFRectangle *rect, Sound *soundA);

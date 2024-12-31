@@ -73,7 +73,7 @@ public:
     VerificationInterface &operator=(const VerificationInterface &other) = delete;
 };
 
-class SigningInterface
+class POPPLER_PRIVATE_EXPORT SigningInterface
 {
 public:
     virtual void addData(unsigned char *data_block, int data_len) = 0;
@@ -86,7 +86,7 @@ public:
     SigningInterface &operator=(const SigningInterface &other) = delete;
 };
 
-class Backend
+class POPPLER_PRIVATE_EXPORT Backend
 {
 public:
     enum class Type
