@@ -1299,7 +1299,6 @@ void HtmlOutputDev::drawJpegImage(GfxState *state, Stream *str)
 {
     InMemoryFile ims;
     FILE *f1 = nullptr;
-    int c;
 
     // open the image file
     std::string fName = createImageFileName("jpg");
@@ -1314,8 +1313,12 @@ void HtmlOutputDev::drawJpegImage(GfxState *state, Stream *str)
     str->reset();
 
     // copy the stream
-    while ((c = str->getChar()) != EOF) {
-        fputc(c, f1);
+    while (true) {
+        auto data = str->getSomeBufferedChars();
+        if (data.empty()) {
+            break;
+        }
+        fwrite(data.data(), 1, data.size(), f1);
     }
 
     fclose(f1);

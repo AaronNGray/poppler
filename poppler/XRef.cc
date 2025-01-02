@@ -195,14 +195,12 @@ ObjectStream::ObjectStream(XRef *xref, int objStrNumA, int recursion)
     }
     delete parser;
 
-    // skip to the first object - this shouldn't be necessary because
-    // the First key is supposed to be equal to offsets[0], but just in
-    // case...
-    for (Goffset pos = first; pos < offsets[0]; ++pos) {
+    // Skip garbage in case the first offset isn't 0.
+    for (Goffset pos = 0; pos < offsets[0]; ++pos) {
         objStr.getStream()->getChar();
     }
 
-    // parse the objects
+    // Parse the objects.
     for (i = 0; i < nObjects; ++i) {
         if (i == nObjects - 1) {
             str = new EmbedStream(objStr.getStream(), Object(objNull), false, 0);

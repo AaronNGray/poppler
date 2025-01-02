@@ -208,18 +208,7 @@ bool DCTStream::readLine()
     }
 }
 
-int DCTStream::getChar()
-{
-    if (current == limit) {
-        if (!readLine()) {
-            return EOF;
-        }
-    }
-
-    return *current++;
-}
-
-int DCTStream::getChars(int nChars, unsigned char *buffer)
+int DCTStream::getSomeChars(int nChars, unsigned char *buffer)
 {
     for (int i = 0; i < nChars;) {
         if (current == limit) {
@@ -236,14 +225,6 @@ int DCTStream::getChars(int nChars, unsigned char *buffer)
         i += static_cast<int>(left);
     }
     return nChars;
-}
-
-int DCTStream::lookChar()
-{
-    if (unlikely(current == nullptr)) {
-        return EOF;
-    }
-    return *current;
 }
 
 GooString *DCTStream::getPSFilter(int psLevel, const char *indent)

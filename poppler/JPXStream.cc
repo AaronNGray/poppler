@@ -368,7 +368,7 @@ void JPXStream::close()
     bufStr->close();
 }
 
-int JPXStream::getChar()
+int JPXStream::getRawChar()
 {
     int c;
 
@@ -386,25 +386,6 @@ int JPXStream::getChar()
     } else {
         c = (readBuf << (8 - readBufLen)) & 0xff;
         readBufLen = 0;
-    }
-    return c;
-}
-
-int JPXStream::lookChar()
-{
-    int c;
-
-    if (readBufLen < 8) {
-        fillReadBuf();
-    }
-    if (readBufLen == 8) {
-        c = readBuf & 0xff;
-    } else if (readBufLen > 8) {
-        c = (readBuf >> (readBufLen - 8)) & 0xff;
-    } else if (readBufLen == 0) {
-        c = EOF;
-    } else {
-        c = (readBuf << (8 - readBufLen)) & 0xff;
     }
     return c;
 }
@@ -526,19 +507,13 @@ void JPXStream::getImageParams(int *bitsPerComponent, StreamColorSpaceMode *csMo
                                 csPrec = csPrec1;
                                 haveCSMode = true;
                             }
-                            if (dataLen >= 7) {
-                                for (i = 0; i < dataLen - 7; ++i) {
-                                    if (bufStr->getChar() == EOF)
-                                        break;
-                                }
+                            if (dataLen > 7) {
+                                bufStr->discardChars(dataLen - 7);
                             }
                         }
                     } else {
-                        if (dataLen >= 3) {
-                            for (i = 0; i < dataLen - 3; ++i) {
-                                if (bufStr->getChar() == EOF)
-                                    break;
-                            }
+                        if (dataLen > 3) {
+                            bufStr->discardChars(dataLen - 3);
                         }
                     }
                 }
@@ -3067,7 +3042,7 @@ void JPXStream::skipSOP()
 
     // SOP occurs at the start of the packet header, so we don't need to
     // worry about bit-stuff prior to it
-    if (byteCount >= 6 && bufStr->lookChar(0) == 0xff && bufStr->lookChar(1) == 0x91) {
+    if (byteCount >= 6 && bufStr->lookAheadChar(0) == 0xff && bufStr->lookAheadChar(1) == 0x91) {
         for (i = 0; i < 6; ++i) {
             bufStr->getChar();
         }
@@ -3082,7 +3057,7 @@ void JPXStream::skipEPH()
     int i, k;
 
     k = bitBufSkip ? 1 : 0;
-    if (byteCount >= (unsigned int)(k + 2) && bufStr->lookChar(k) == 0xff && bufStr->lookChar(k + 1) == 0x92) {
+    if (byteCount >= (unsigned int)(k + 2) && bufStr->lookAheadChar(k) == 0xff && bufStr->lookAheadChar(k + 1) == 0x92) {
         for (i = 0; i < k + 2; ++i) {
             bufStr->getChar();
         }

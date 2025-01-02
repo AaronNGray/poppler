@@ -62,17 +62,16 @@ public:
     ~DCTStream() override;
     StreamKind getKind() const override { return strDCT; }
     void reset() override;
-    int getChar() override;
-    int lookChar() override;
+
     GooString *getPSFilter(int psLevel, const char *indent) override;
     bool isBinary(bool last = true) const override;
+
+    int getSomeChars(int nChars, unsigned char *buffer) override;
 
 private:
     void init();
 
-    bool hasGetChars() override { return true; }
     bool readLine();
-    int getChars(int nChars, unsigned char *buffer) override;
 
     int colorXform;
     JSAMPLE *current;

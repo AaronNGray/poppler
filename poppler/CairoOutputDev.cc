@@ -3078,15 +3078,13 @@ cleanup:
 
 bool CairoOutputDev::getStreamData(Stream *str, char **buffer, int *length)
 {
-    int len, i;
+    int len;
     char *strBuffer;
 
-    len = 0;
     str->close();
     str->reset();
-    while (str->getChar() != EOF) {
-        len++;
-    }
+    len = str->discardChars(INT_MAX);
+
     if (len == 0) {
         return false;
     }
@@ -3095,9 +3093,7 @@ bool CairoOutputDev::getStreamData(Stream *str, char **buffer, int *length)
 
     str->close();
     str->reset();
-    for (i = 0; i < len; ++i) {
-        strBuffer[i] = str->getChar();
-    }
+    str->doGetChars(len, (unsigned char *)strBuffer);
 
     *buffer = strBuffer;
     *length = len;

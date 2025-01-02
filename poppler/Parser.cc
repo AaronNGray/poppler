@@ -273,12 +273,6 @@ Stream *Parser::makeStream(Object &&dict, const unsigned char *fileKey, CryptAlg
     }
     baseStr = lexer.getStream()->getBaseStream();
 
-    // skip over stream data
-    if (Lexer::LOOK_VALUE_NOT_CACHED != lexer.lookCharLastValueCached) {
-        // take into account the fact that we've cached one value
-        pos = pos - 1;
-        lexer.lookCharLastValueCached = Lexer::LOOK_VALUE_NOT_CACHED;
-    }
     if (unlikely(length < 0)) {
         return nullptr;
     }

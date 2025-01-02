@@ -329,8 +329,6 @@ gboolean poppler_attachment_save_to_fd(PopplerAttachment *attachment, int fd, GE
 
 #endif /* !G_OS_WIN32 */
 
-#define BUF_SIZE 1024
-
 /**
  * poppler_attachment_save_to_callback:
  * @attachment: A #PopplerAttachment.
@@ -350,9 +348,6 @@ gboolean poppler_attachment_save_to_callback(PopplerAttachment *attachment, Popp
 {
     PopplerAttachmentPrivate *priv;
     Stream *stream;
-    gchar buf[BUF_SIZE];
-    int i;
-    gboolean eof_reached = FALSE;
 
     g_return_val_if_fail(POPPLER_IS_ATTACHMENT(attachment), FALSE);
     priv = GET_PRIVATE(attachment);
@@ -360,24 +355,13 @@ gboolean poppler_attachment_save_to_callback(PopplerAttachment *attachment, Popp
     stream = priv->obj_stream.getStream();
     stream->reset();
 
-    do {
-        int data;
-
-        for (i = 0; i < BUF_SIZE; i++) {
-            data = stream->getChar();
-            if (data == EOF) {
-                eof_reached = TRUE;
-                break;
-            }
-            buf[i] = data;
+    while (true) {
+        auto chars = stream->getSomeBufferedChars();
+        if (chars.empty()) {
+            return TRUE;
         }
-
-        if (i > 0) {
-            if (!(save_func)(buf, i, user_data, error)) {
-                return FALSE;
-            }
+        if (!(save_func)((gchar *)chars.data(), chars.size(), user_data, error)) {
+            return FALSE;
         }
-    } while (!eof_reached);
-
-    return TRUE;
+    }
 }

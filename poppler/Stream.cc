@@ -42,6 +42,7 @@
 // Copyright (C) 2021 Hubert Figuiere <hub@figuiere.net>
 // Copyright (C) 2021 Georgiy Sgibnev <georgiy@sgibnev.com>. Work sponsored by lab50.net.
 // Copyright (C) 2024 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
+// Copyright (C) 2023 Jonathan Hähne <jonathan.haehne@tum.de>
 //
 // To see a description of the changes please see the Changelog file that
 // came with your tarball or type make ChangeLog if you are building from git
@@ -96,33 +97,9 @@ static bool setDJSYSFLAGS = false;
 // Stream (base class)
 //------------------------------------------------------------------------
 
-Stream::Stream()
-{
-    ref = 1;
-}
-
-Stream::~Stream() = default;
-
 void Stream::close() { }
 
-int Stream::getRawChar()
-{
-    error(errInternal, -1, "Internal: called getRawChar() on non-predictor stream");
-    return EOF;
-}
-
-int Stream::getChars(int nChars, unsigned char *buffer)
-{
-    error(errInternal, -1, "Internal: called getChars() on non-predictor stream");
-    return 0;
-}
-
-void Stream::getRawChars(int nChars, int *buffer)
-{
-    error(errInternal, -1, "Internal: called getRawChars() on non-predictor stream");
-}
-
-char *Stream::getLine(char *buf, int size)
+char *Stream::getLine(char *dest, int size)
 {
     int i;
     int c;
@@ -141,29 +118,20 @@ char *Stream::getLine(char *buf, int size)
             }
             break;
         }
-        buf[i] = c;
+        dest[i] = c;
     }
-    buf[i] = '\0';
-    return buf;
+    dest[i] = '\0';
+    return dest;
 }
 
 unsigned int Stream::discardChars(unsigned int n)
 {
-    unsigned char buf[4096];
-    unsigned int count, i, j;
-
-    count = 0;
-    while (count < n) {
-        if ((i = n - count) > sizeof(buf)) {
-            i = (unsigned int)sizeof(buf);
-        }
-        j = (unsigned int)doGetChars((int)i, buf);
-        count += j;
-        if (j != i) {
-            break;
-        }
+    unsigned got = 0;
+    while (got < n && lookChar() != EOF) {
+        getChar();
+        got++;
     }
-    return count;
+    return got;
 }
 
 GooString *Stream::getPSFilter(int psLevel, const char *indent)
@@ -231,6 +199,15 @@ bool Stream::isEncrypted() const
     return false;
 }
 
+void Stream::flushBackToParent(Stream *parent, int nChars, unsigned char *data)
+{
+    if (nChars > 0) {
+        assert(parent->bufPtr >= parent->buf + nChars);
+        parent->bufPtr -= nChars;
+        memcpy(parent->bufPtr, data, nChars);
+    }
+}
+
 class BaseStreamStream : public Stream
 {
 public:
@@ -238,18 +215,23 @@ public:
     ~BaseStreamStream() override;
 
     StreamKind getKind() const override { return str->getBaseStream()->getKind(); }
-    void reset() override { str->getBaseStream()->reset(); }
-    int getChar() override { return str->getBaseStream()->getChar(); }
-    int lookChar() override { return str->getBaseStream()->lookChar(); }
+    void reset() override
+    {
+        str->getBaseStream()->reset();
+        purgeBuffer();
+    }
+
     bool isBinary(bool last = true) const override { return str->getBaseStream()->isBinary(); }
     int getUnfilteredChar() override { return str->getBaseStream()->getUnfilteredChar(); }
     void unfilteredReset() override { str->getBaseStream()->unfilteredReset(); }
-    Goffset getPos() override { return str->getBaseStream()->getPos(); }
     void setPos(Goffset pos, int dir) override { str->getBaseStream()->setPos(pos, dir); }
     BaseStream *getBaseStream() override { return str->getBaseStream()->getBaseStream(); }
     Stream *getUndecodedStream() override { return str->getBaseStream()->getUndecodedStream(); }
     Dict *getDict() override { return str->getBaseStream()->getDict(); }
     Object *getDictObject() override { return str->getBaseStream()->getDictObject(); }
+
+    int getSomeChars(int nChars, unsigned char *buffer) override { return str->getSomeChars(nChars, buffer); };
+    Goffset getRawPos() override { return str->getBaseStream()->getRawPos(); }
 
 private:
     std::unique_ptr<Stream> str;
@@ -300,7 +282,8 @@ Stream *Stream::makeFilter(const char *name, Stream *str, Object *params, int re
                 early = obj.getInt();
             }
         }
-        str = new LZWStream(str, pred, columns, colors, bits, early);
+        LZWStream *s = new LZWStream(str, columns, colors, bits, early);
+        str = s->asPredictedStream(pred, columns, colors, bits);
     } else if (!strcmp(name, "RunLengthDecode") || !strcmp(name, "RL")) {
         str = new RunLengthStream(str);
     } else if (!strcmp(name, "CCITTFaxDecode") || !strcmp(name, "CCF")) {
@@ -384,7 +367,8 @@ Stream *Stream::makeFilter(const char *name, Stream *str, Object *params, int re
                 bits = obj.getInt();
             }
         }
-        str = new FlateStream(str, pred, columns, colors, bits);
+        FlateStream *s = new FlateStream(str, columns, colors, bits);
+        str = s->asPredictedStream(pred, columns, colors, bits);
     } else if (!strcmp(name, "JBIG2Decode")) {
         Object globals;
         if (params->isDict()) {
@@ -475,10 +459,7 @@ BaseStream::~BaseStream() = default;
 // BaseStream
 //------------------------------------------------------------------------
 
-BaseSeekInputStream::BaseSeekInputStream(Goffset startA, bool limitedA, Goffset lengthA, Object &&dictA)
-    : BaseStream(std::move(dictA), lengthA), start(startA), limited(limitedA), bufPtr(buf), bufEnd(buf), bufPos(start), savePos(0), saved(false)
-{
-}
+BaseSeekInputStream::BaseSeekInputStream(Goffset startA, bool limitedA, Goffset lengthA, Object &&dictA) : BaseStream(std::move(dictA), lengthA), start(startA), limited(limitedA), bufPos(start), savePos(0), saved(false) { }
 
 BaseSeekInputStream::~BaseSeekInputStream() = default;
 
@@ -487,7 +468,7 @@ void BaseSeekInputStream::reset()
     savePos = currentPos();
     setCurrentPos(start);
     saved = true;
-    bufPtr = bufEnd = buf;
+    purgeBuffer();
     bufPos = start;
 }
 
@@ -513,61 +494,28 @@ void BaseSeekInputStream::setPos(Goffset pos, int dir)
         bufPos = length - pos;
         setCurrentPos(bufPos);
     }
-    bufPtr = bufEnd = buf;
+    purgeBuffer();
 }
 
 void BaseSeekInputStream::moveStart(Goffset delta)
 {
     start += delta;
-    bufPtr = bufEnd = buf;
+    purgeBuffer();
     bufPos = start;
 }
 
-bool BaseSeekInputStream::fillBuf()
+int BaseSeekInputStream::getSomeChars(int nChars, unsigned char *buffer)
 {
-    Goffset n;
-
-    bufPos += bufEnd - buf;
-    bufPtr = bufEnd = buf;
-    if (limited && bufPos >= start + length) {
-        return false;
+    int remaining = start + length - bufPos;
+    if (limited && nChars > remaining) {
+        nChars = remaining;
     }
-
-    if (limited && bufPos + seekInputStreamBufSize > start + length) {
-        n = start + length - bufPos;
-    } else {
-        n = seekInputStreamBufSize - (bufPos % seekInputStreamBufSize);
+    Goffset got = 0;
+    if (nChars > 0) {
+        got = read((char *)buffer, nChars);
     }
-
-    n = read(buf, n);
-    bufEnd = buf + n;
-    if (bufPtr >= bufEnd) {
-        return false;
-    }
-
-    return true;
-}
-
-int BaseSeekInputStream::getChars(int nChars, unsigned char *buffer)
-{
-    int n, m;
-
-    n = 0;
-    while (n < nChars) {
-        if (bufPtr >= bufEnd) {
-            if (!fillBuf()) {
-                break;
-            }
-        }
-        m = (int)(bufEnd - bufPtr);
-        if (m > nChars - n) {
-            m = nChars - n;
-        }
-        memcpy(buffer + n, bufPtr, m);
-        bufPtr += m;
-        n += m;
-    }
-    return n;
+    bufPos += got;
+    return got;
 }
 
 //------------------------------------------------------------------------
@@ -591,6 +539,18 @@ void FilterStream::setPos(Goffset pos, int dir)
     error(errInternal, -1, "Internal: called setPos() on FilterStream");
 }
 
+Stream *FilterStream::asPredictedStream(int predictor, int columns, int colors, int bits)
+{
+    if (predictor == 1) {
+        return this;
+    }
+    auto *pred = new StreamPredictor(this, predictor, columns, colors, bits);
+    if (!pred->isOk()) {
+        delete pred;
+        return this;
+    }
+    return pred;
+}
 //------------------------------------------------------------------------
 // ImageStream
 //------------------------------------------------------------------------
@@ -724,9 +684,8 @@ void ImageStream::skipLine()
 // StreamPredictor
 //------------------------------------------------------------------------
 
-StreamPredictor::StreamPredictor(Stream *strA, int predictorA, int widthA, int nCompsA, int nBitsA)
+StreamPredictor::StreamPredictor(Stream *strA, int predictorA, int widthA, int nCompsA, int nBitsA) : FilterStream(strA)
 {
-    str = strA;
     predictor = predictorA;
     width = widthA;
     nComps = nCompsA;
@@ -752,29 +711,10 @@ StreamPredictor::StreamPredictor(Stream *strA, int predictorA, int widthA, int n
 StreamPredictor::~StreamPredictor()
 {
     gfree(predLine);
+    delete str;
 }
 
-int StreamPredictor::lookChar()
-{
-    if (predIdx >= rowBytes) {
-        if (!getNextLine()) {
-            return EOF;
-        }
-    }
-    return predLine[predIdx];
-}
-
-int StreamPredictor::getChar()
-{
-    if (predIdx >= rowBytes) {
-        if (!getNextLine()) {
-            return EOF;
-        }
-    }
-    return predLine[predIdx++];
-}
-
-int StreamPredictor::getChars(int nChars, unsigned char *buffer)
+int StreamPredictor::getSomeChars(int nChars, unsigned char *buffer)
 {
     int n, m;
 
@@ -808,7 +748,7 @@ bool StreamPredictor::getNextLine()
 
     // get PNG optimum predictor number
     if (predictor >= 10) {
-        if ((curPred = str->getRawChar()) == EOF) {
+        if ((curPred = str->getChar()) == EOF) {
             return false;
         }
         curPred += 10;
@@ -817,24 +757,26 @@ bool StreamPredictor::getNextLine()
     }
 
     // read the raw line, apply PNG (byte) predictor
-    int *rawCharLine = new int[rowBytes - pixBytes];
-    str->getRawChars(rowBytes - pixBytes, rawCharLine);
+    unsigned char *rawCharLine = new unsigned char[rowBytes - pixBytes];
+    int got = str->doGetChars(rowBytes - pixBytes, rawCharLine);
+    int actualRowBytes = rowBytes;
+    if (got < rowBytes - pixBytes) {
+        if (got == 0) {
+            delete[] rawCharLine;
+            return false;
+        }
+        // ought to always return false, but some (broken) PDF files
+        // contain truncated image data, and Adobe apparently reads the
+        // last partial line
+        actualRowBytes = pixBytes + got;
+    }
     memset(upLeftBuf, 0, pixBytes + 1);
-    for (i = pixBytes; i < rowBytes; ++i) {
+    for (i = pixBytes; i < actualRowBytes; ++i) {
         for (j = pixBytes; j > 0; --j) {
             upLeftBuf[j] = upLeftBuf[j - 1];
         }
         upLeftBuf[0] = predLine[i];
-        if ((c = rawCharLine[i - pixBytes]) == EOF) {
-            if (i > pixBytes) {
-                // this ought to return false, but some (broken) PDF files
-                // contain truncated image data, and Adobe apparently reads the
-                // last partial line
-                break;
-            }
-            delete[] rawCharLine;
-            return false;
-        }
+        c = rawCharLine[i - pixBytes];
         switch (curPred) {
         case 11: // PNG sub
             predLine[i] = predLine[i - pixBytes] + (unsigned char)c;
@@ -925,6 +867,11 @@ bool StreamPredictor::getNextLine()
     return true;
 }
 
+void StreamPredictor::setPos(Goffset pos, int dir)
+{
+    error(errInternal, -1, "Internal: called setPos() on StreamPredictor");
+}
+
 //------------------------------------------------------------------------
 // FileStream
 //------------------------------------------------------------------------
@@ -935,8 +882,6 @@ FileStream::FileStream(GooFile *fileA, Goffset startA, bool limitedA, Goffset le
     offset = start = startA;
     limited = limitedA;
     length = lengthA;
-    bufPtr = bufEnd = buf;
-    bufPos = start;
     savePos = 0;
     saved = false;
     needsEncryptionOnSave = false;
@@ -962,8 +907,7 @@ void FileStream::reset()
     savePos = offset;
     offset = start;
     saved = true;
-    bufPtr = bufEnd = buf;
-    bufPos = start;
+    purgeBuffer();
 }
 
 void FileStream::close()
@@ -974,30 +918,23 @@ void FileStream::close()
     }
 }
 
-bool FileStream::fillBuf()
+int FileStream::getSomeChars(int nChars, unsigned char *buffer)
 {
-    int n;
-
-    bufPos += bufEnd - buf;
-    bufPtr = bufEnd = buf;
-    if (limited && bufPos >= start + length) {
-        return false;
+    if (limited) {
+        int max = start + length - offset;
+        if (nChars > max) {
+            if (max == 0) {
+                return 0;
+            }
+            nChars = max;
+        }
     }
-    if (limited && bufPos + fileStreamBufSize > start + length) {
-        n = start + length - bufPos;
-    } else {
-        n = fileStreamBufSize;
+    int got = file->read((char *)buffer, nChars, offset);
+    if (got < 0) {
+        got = 0;
     }
-    n = file->read(buf, n, offset);
-    if (n == -1) {
-        return false;
-    }
-    offset += n;
-    bufEnd = buf + n;
-    if (bufPtr >= bufEnd) {
-        return false;
-    }
-    return true;
+    offset += got;
+    return got;
 }
 
 void FileStream::setPos(Goffset pos, int dir)
@@ -1005,23 +942,22 @@ void FileStream::setPos(Goffset pos, int dir)
     Goffset size;
 
     if (dir >= 0) {
-        offset = bufPos = pos;
+        offset = pos;
     } else {
         size = file->size();
         if (pos > size) {
             pos = size;
         }
         offset = size - pos;
-        bufPos = offset;
     }
-    bufPtr = bufEnd = buf;
+    purgeBuffer();
 }
 
 void FileStream::moveStart(Goffset delta)
 {
     start += delta;
-    bufPtr = bufEnd = buf;
-    bufPos = start;
+    offset = start;
+    purgeBuffer();
 }
 
 //------------------------------------------------------------------------
@@ -1034,8 +970,7 @@ CachedFileStream::CachedFileStream(CachedFile *ccA, Goffset startA, bool limited
     start = startA;
     limited = limitedA;
     length = lengthA;
-    bufPtr = bufEnd = buf;
-    bufPos = start;
+    strPos = start;
     savePos = 0;
     saved = false;
 }
@@ -1064,8 +999,8 @@ void CachedFileStream::reset()
     cc->seek(start, SEEK_SET);
 
     saved = true;
-    bufPtr = bufEnd = buf;
-    bufPos = start;
+    purgeBuffer();
+    strPos = start;
 }
 
 void CachedFileStream::close()
@@ -1076,26 +1011,11 @@ void CachedFileStream::close()
     }
 }
 
-bool CachedFileStream::fillBuf()
+int CachedFileStream::getSomeChars(int nChars, unsigned char *buffer)
 {
-    int n;
-
-    bufPos += bufEnd - buf;
-    bufPtr = bufEnd = buf;
-    if (limited && bufPos >= start + length) {
-        return false;
-    }
-    if (limited && bufPos + cachedStreamBufSize > start + length) {
-        n = start + length - bufPos;
-    } else {
-        n = cachedStreamBufSize - (bufPos % cachedStreamBufSize);
-    }
-    n = cc->read(buf, 1, n);
-    bufEnd = buf + n;
-    if (bufPtr >= bufEnd) {
-        return false;
-    }
-    return true;
+    size_t got = cc->read(buffer, 1, nChars);
+    strPos += got;
+    return got;
 }
 
 void CachedFileStream::setPos(Goffset pos, int dir)
@@ -1104,7 +1024,7 @@ void CachedFileStream::setPos(Goffset pos, int dir)
 
     if (dir >= 0) {
         cc->seek(pos, SEEK_SET);
-        bufPos = pos;
+        strPos = pos;
     } else {
         cc->seek(0, SEEK_END);
         size = (unsigned int)cc->tell();
@@ -1114,24 +1034,23 @@ void CachedFileStream::setPos(Goffset pos, int dir)
         }
 
         cc->seek(-(int)pos, SEEK_END);
-        bufPos = (unsigned int)cc->tell();
+        strPos = (unsigned int)cc->tell();
     }
-
-    bufPtr = bufEnd = buf;
+    purgeBuffer();
 }
 
 void CachedFileStream::moveStart(Goffset delta)
 {
     start += delta;
-    bufPtr = bufEnd = buf;
-    bufPos = start;
+    purgeBuffer();
+    strPos = start;
 }
 
 MemStream::~MemStream() = default;
 
 AutoFreeMemStream::~AutoFreeMemStream()
 {
-    gfree(buf);
+    gfree(mem);
 }
 
 bool AutoFreeMemStream::isFilterRemovalForbidden() const
@@ -1170,6 +1089,7 @@ EmbedStream::~EmbedStream()
     if (reusable) {
         gfree(bufData);
     }
+    flushBackToParent(str, bufEnd - bufPtr, bufPtr);
 }
 
 void EmbedStream::reset()
@@ -1188,6 +1108,7 @@ void EmbedStream::reset()
     }
     record = false;
     replay = false;
+    purgeBuffer();
     bufPos = 0;
 }
 
@@ -1207,6 +1128,7 @@ void EmbedStream::rewind()
 {
     record = false;
     replay = true;
+    purgeBuffer();
     bufPos = 0;
 }
 
@@ -1215,7 +1137,7 @@ void EmbedStream::restore()
     replay = false;
 }
 
-Goffset EmbedStream::getPos()
+Goffset EmbedStream::getRawPos()
 {
     if (replay) {
         return bufPos;
@@ -1224,82 +1146,47 @@ Goffset EmbedStream::getPos()
     }
 }
 
-int EmbedStream::getChar()
+int EmbedStream::getSomeChars(int nChars, unsigned char *buffer)
 {
-    if (replay) {
-        if (bufPos < bufLen) {
-            return bufData[bufPos++];
-        } else {
-            return EOF;
-        }
-    } else {
-        if (limited && !length) {
-            return EOF;
-        }
-        int c = str->getChar();
-        --length;
-        if (record) {
-            bufData[bufLen] = c;
-            bufLen++;
-            if (bufLen >= bufMax) {
-                bufMax *= 2;
-                bufData = (unsigned char *)grealloc(bufData, bufMax);
-            }
-        }
-        return c;
-    }
-}
-
-int EmbedStream::lookChar()
-{
-    if (replay) {
-        if (bufPos < bufLen) {
-            return bufData[bufPos];
-        } else {
-            return EOF;
-        }
-    } else {
-        if (limited && !length) {
-            return EOF;
-        }
-        return str->lookChar();
-    }
-}
-
-int EmbedStream::getChars(int nChars, unsigned char *buffer)
-{
-    int len;
+    int got;
 
     if (nChars <= 0) {
         return 0;
     }
     if (replay) {
         if (bufPos >= bufLen) {
-            return EOF;
+            return 0;
         }
-        len = bufLen - bufPos;
-        if (nChars > len) {
-            nChars = len;
+        got = bufLen - bufPos;
+        if (nChars > got) {
+            nChars = got;
         }
         memcpy(buffer, bufData, nChars);
-        return len;
+        bufPos += nChars;
+        return nChars;
     } else {
-        if (limited && length < nChars) {
-            nChars = length;
+        if (limited) {
+            if (length < nChars) {
+                if (length == 0) {
+                    return 0;
+                }
+                nChars = length;
+            }
         }
-        len = str->doGetChars(nChars, buffer);
+        got = str->doGetChars(nChars, buffer);
+        length -= got;
         if (record) {
-            if (bufLen + len >= bufMax) {
-                while (bufLen + len >= bufMax) {
+            if (bufLen + got >= bufMax) {
+                while (bufLen + got >= bufMax) {
                     bufMax *= 2;
                 }
                 bufData = (unsigned char *)grealloc(bufData, bufMax);
             }
-            memcpy(bufData + bufLen, buffer, len);
-            bufLen += len;
+            memcpy(bufData + bufLen, buffer, got);
+            bufLen += got;
         }
     }
-    return len;
+    return got;
 }
 
 void EmbedStream::setPos(Goffset pos, int dir)
@@ -1322,11 +1209,7 @@ void EmbedStream::moveStart(Goffset delta)
 // ASCIIHexStream
 //------------------------------------------------------------------------
 
-ASCIIHexStream::ASCIIHexStream(Stream *strA) : FilterStream(strA)
-{
-    buf = EOF;
-    eof = false;
-}
+ASCIIHexStream::ASCIIHexStream(Stream *strA) : FilterStream(strA), eof(false) { }
 
 ASCIIHexStream::~ASCIIHexStream()
 {
@@ -1336,29 +1219,26 @@ ASCIIHexStream::~ASCIIHexStream()
 void ASCIIHexStream::reset()
 {
     str->reset();
-    buf = EOF;
     eof = false;
+    purgeBuffer();
 }
 
-int ASCIIHexStream::lookChar()
+int ASCIIHexStream::getRawChar()
 {
-    int c1, c2, x;
-
-    if (buf != EOF) {
-        return buf;
-    }
+    int c1, c2, x = 0;
     if (eof) {
-        buf = EOF;
         return EOF;
     }
+
     do {
         c1 = str->getChar();
     } while (isspace(c1));
-    if (c1 == '>') {
+
+    if (c1 == EOF || c1 == '>') {
         eof = true;
-        buf = EOF;
-        return buf;
+        return EOF;
     }
+
     do {
         c2 = str->getChar();
     } while (isspace(c2));
@@ -1366,6 +1246,7 @@ int ASCIIHexStream::lookChar()
         eof = true;
         c2 = '0';
     }
+
     if (c1 >= '0' && c1 <= '9') {
         x = (c1 - '0') << 4;
     } else if (c1 >= 'A' && c1 <= 'F') {
@@ -1379,6 +1260,7 @@ int ASCIIHexStream::lookChar()
         error(errSyntaxError, getPos(), "Illegal character <{0:02x}> in ASCIIHex stream", c1);
         x = 0;
     }
+
     if (c2 >= '0' && c2 <= '9') {
         x += c2 - '0';
     } else if (c2 >= 'A' && c2 <= 'F') {
@@ -1387,12 +1269,11 @@ int ASCIIHexStream::lookChar()
         x += c2 - 'a' + 10;
     } else if (c2 == EOF) {
         eof = true;
-        x = 0;
     } else {
         error(errSyntaxError, getPos(), "Illegal character <{0:02x}> in ASCIIHex stream", c2);
     }
-    buf = x & 0xff;
-    return buf;
+
+    return x & 0xff;
 }
 
 GooString *ASCIIHexStream::getPSFilter(int psLevel, const char *indent)
@@ -1432,11 +1313,12 @@ ASCII85Stream::~ASCII85Stream()
 void ASCII85Stream::reset()
 {
     str->reset();
+    purgeBuffer();
     index = n = 0;
     eof = false;
 }
 
-int ASCII85Stream::lookChar()
+int ASCII85Stream::getRawChar()
 {
     int k;
     unsigned long t;
@@ -1482,7 +1364,7 @@ int ASCII85Stream::lookChar()
             }
         }
     }
-    return b[index];
+    return b[index++];
 }
 
 GooString *ASCII85Stream::getPSFilter(int psLevel, const char *indent)
@@ -1508,17 +1390,8 @@ bool ASCII85Stream::isBinary(bool last) const
 // LZWStream
 //------------------------------------------------------------------------
 
-LZWStream::LZWStream(Stream *strA, int predictor, int columns, int colors, int bits, int earlyA) : FilterStream(strA)
+LZWStream::LZWStream(Stream *strA, int columns, int colors, int bits, int earlyA) : FilterStream(strA)
 {
-    if (predictor != 1) {
-        pred = new StreamPredictor(this, predictor, columns, colors, bits);
-        if (!pred->isOk()) {
-            delete pred;
-            pred = nullptr;
-        }
-    } else {
-        pred = nullptr;
-    }
     early = earlyA;
     eof = false;
     inputBits = 0;
@@ -1527,61 +1400,13 @@ LZWStream::LZWStream(Stream *strA, int predictor, int columns, int colors, int b
 
 LZWStream::~LZWStream()
 {
-    delete pred;
     delete str;
 }
 
-int LZWStream::getChar()
-{
-    if (pred) {
-        return pred->getChar();
-    }
-    if (eof) {
-        return EOF;
-    }
-    if (seqIndex >= seqLength) {
-        if (!processNextCode()) {
-            return EOF;
-        }
-    }
-    return seqBuf[seqIndex++];
-}
-
-int LZWStream::lookChar()
-{
-    if (pred) {
-        return pred->lookChar();
-    }
-    if (eof) {
-        return EOF;
-    }
-    if (seqIndex >= seqLength) {
-        if (!processNextCode()) {
-            return EOF;
-        }
-    }
-    return seqBuf[seqIndex];
-}
-
-void LZWStream::getRawChars(int nChars, int *buffer)
-{
-    for (int i = 0; i < nChars; ++i) {
-        buffer[i] = doGetRawChar();
-    }
-}
-
-int LZWStream::getRawChar()
-{
-    return doGetRawChar();
-}
-
-int LZWStream::getChars(int nChars, unsigned char *buffer)
+int LZWStream::getSomeChars(int nChars, unsigned char *buffer)
 {
     int n, m;
 
-    if (pred) {
-        return pred->getChars(nChars, buffer);
-    }
     if (eof) {
         return 0;
     }
@@ -1606,6 +1431,7 @@ int LZWStream::getChars(int nChars, unsigned char *buffer)
 void LZWStream::reset()
 {
     str->reset();
+    purgeBuffer();
     eof = false;
     inputBits = 0;
     clearTable();
@@ -1710,7 +1536,7 @@ GooString *LZWStream::getPSFilter(int psLevel, const char *indent)
 {
     GooString *s;
 
-    if (psLevel < 2 || pred) {
+    if (psLevel < 2) {
         return nullptr;
     }
     if (!(s = str->getPSFilter(psLevel, indent))) {
@@ -1748,10 +1574,11 @@ void RunLengthStream::reset()
 {
     str->reset();
     bufPtr = bufEnd = buf;
+    purgeBuffer();
     eof = false;
 }
 
-int RunLengthStream::getChars(int nChars, unsigned char *buffer)
+int RunLengthStream::getSomeChars(int nChars, unsigned char *buffer)
 {
     int n, m;
 
@@ -1859,8 +1686,6 @@ CCITTFaxStream::CCITTFaxStream(Stream *strA, int encodingA, bool endOfLineA, boo
     inputBits = 0;
     a0i = 0;
     outputBits = 0;
-
-    buf = EOF;
 }
 
 CCITTFaxStream::~CCITTFaxStream()
@@ -1877,13 +1702,13 @@ void CCITTFaxStream::ccittReset(bool unfiltered)
     } else {
         str->reset();
     }
+    purgeBuffer();
 
     row = 0;
     nextLine2D = encoding < 0;
     inputBits = 0;
     a0i = 0;
     outputBits = 0;
-    buf = EOF;
 }
 
 void CCITTFaxStream::unfilteredReset()
@@ -1959,19 +1784,14 @@ inline void CCITTFaxStream::addPixelsNeg(int a1, int blackPixels)
     }
 }
 
-int CCITTFaxStream::lookChar()
+int CCITTFaxStream::getRawChar()
 {
     int code1, code2, code3;
     int b1i, blackPixels, i, bits;
     bool gotEOL;
 
-    if (buf != EOF) {
-        return buf;
-    }
-
     // read the next row
     if (outputBits == 0) {
-
         // if at eof just return EOF
         if (eof) {
             return EOF;
@@ -2340,10 +2160,11 @@ int CCITTFaxStream::lookChar()
 
         ++row;
     }
+    int res = 0;
 
     // get a byte
     if (outputBits >= 8) {
-        buf = (a0i & 1) ? 0x00 : 0xff;
+        res = (a0i & 1) ? 0x00 : 0xff;
         outputBits -= 8;
         if (outputBits == 0 && codingLine[a0i] < columns) {
             ++a0i;
@@ -2351,19 +2172,18 @@ int CCITTFaxStream::lookChar()
         }
     } else {
         bits = 8;
-        buf = 0;
         do {
             if (outputBits > bits) {
-                buf <<= bits;
+                res <<= bits;
                 if (!(a0i & 1)) {
-                    buf |= 0xff >> (8 - bits);
+                    res |= 0xff >> (8 - bits);
                 }
                 outputBits -= bits;
                 bits = 0;
             } else {
-                buf <<= outputBits;
+                res <<= outputBits;
                 if (!(a0i & 1)) {
-                    buf |= 0xff >> (8 - outputBits);
+                    res |= 0xff >> (8 - outputBits);
                 }
                 bits -= outputBits;
                 outputBits = 0;
@@ -2376,16 +2196,16 @@ int CCITTFaxStream::lookChar()
                     }
                     outputBits = codingLine[a0i] - codingLine[a0i - 1];
                 } else if (bits > 0) {
-                    buf <<= bits;
+                    res <<= bits;
                     bits = 0;
                 }
             }
         } while (bits);
     }
     if (black) {
-        buf ^= 0xff;
+        res ^= 0xff;
     }
-    return buf;
+    return res;
 }
 
 short CCITTFaxStream::getTwoDimCode()
@@ -2693,6 +2513,7 @@ void DCTStream::dctReset(bool unfiltered)
         str->unfilteredReset();
     else
         str->reset();
+    purgeBuffer();
 
     progressive = interleaved = false;
     width = height = 0;
@@ -2819,7 +2640,7 @@ void DCTStream::close()
     FilterStream::close();
 }
 
-int DCTStream::getChar()
+int DCTStream::getRawChar()
 {
     int c;
 
@@ -2859,27 +2680,6 @@ int DCTStream::getChar()
         }
     }
     return c;
-}
-
-int DCTStream::lookChar()
-{
-    if (y >= height) {
-        return EOF;
-    }
-    if (progressive || !interleaved) {
-        return frameBuf[comp][y * bufWidth + x];
-    } else {
-        if (dy >= mcuHeight) {
-            if (!readMCURow()) {
-                y = height;
-                return EOF;
-            }
-            comp = 0;
-            x = 0;
-            dy = 0;
-        }
-        return rowBuf[comp][dy][x];
-    }
 }
 
 void DCTStream::restart()
@@ -4151,17 +3951,8 @@ static const FlateCode flateFixedDistCodeTabCodes[32] = { { 5, 0x0000 }, { 5, 0x
 
 FlateHuffmanTab FlateStream::fixedDistCodeTab = { flateFixedDistCodeTabCodes, 5 };
 
-FlateStream::FlateStream(Stream *strA, int predictor, int columns, int colors, int bits) : FilterStream(strA)
+FlateStream::FlateStream(Stream *strA, int columns, int colors, int bits) : FilterStream(strA)
 {
-    if (predictor != 1) {
-        pred = new StreamPredictor(this, predictor, columns, colors, bits);
-        if (!pred->isOk()) {
-            delete pred;
-            pred = nullptr;
-        }
-    } else {
-        pred = nullptr;
-    }
     litCodeTab.codes = nullptr;
     distCodeTab.codes = nullptr;
     memset(buf, 0, flateWindow);
@@ -4175,7 +3966,6 @@ FlateStream::~FlateStream()
     if (distCodeTab.codes != fixedDistCodeTab.codes) {
         gfree(const_cast<FlateCode *>(distCodeTab.codes));
     }
-    delete pred;
     delete str;
 }
 
@@ -4186,6 +3976,7 @@ void FlateStream::flateReset(bool unfiltered)
     } else {
         str->reset();
     }
+    purgeBuffer();
 
     index = 0;
     remain = 0;
@@ -4231,65 +4022,11 @@ void FlateStream::reset()
     eof = false;
 }
 
-int FlateStream::getChar()
-{
-    if (pred) {
-        return pred->getChar();
-    }
-    return doGetRawChar();
-}
-
-int FlateStream::getChars(int nChars, unsigned char *buffer)
-{
-    if (pred) {
-        return pred->getChars(nChars, buffer);
-    } else {
-        for (int i = 0; i < nChars; ++i) {
-            const int c = doGetRawChar();
-            if (likely(c != EOF)) {
-                buffer[i] = c;
-            } else {
-                return i;
-            }
-        }
-        return nChars;
-    }
-}
-
-int FlateStream::lookChar()
-{
-    int c;
-
-    if (pred) {
-        return pred->lookChar();
-    }
-    while (remain == 0) {
-        if (endOfBlock && eof) {
-            return EOF;
-        }
-        readSome();
-    }
-    c = buf[index];
-    return c;
-}
-
-void FlateStream::getRawChars(int nChars, int *buffer)
-{
-    for (int i = 0; i < nChars; ++i) {
-        buffer[i] = doGetRawChar();
-    }
-}
-
-int FlateStream::getRawChar()
-{
-    return doGetRawChar();
-}
-
 GooString *FlateStream::getPSFilter(int psLevel, const char *indent)
 {
     GooString *s;
 
-    if (psLevel < 3 || pred) {
+    if (psLevel < 3) {
         return nullptr;
     }
     if (!(s = str->getPSFilter(psLevel, indent))) {
@@ -4664,46 +4401,37 @@ EOFStream::~EOFStream()
 
 BufStream::BufStream(Stream *strA, int bufSizeA) : FilterStream(strA)
 {
-    bufSize = bufSizeA;
-    buf = (int *)gmallocn(bufSize, sizeof(int));
+    assert(bufSizeA < streamBufSize);
 }
 
 BufStream::~BufStream()
 {
-    gfree(buf);
     delete str;
 }
 
 void BufStream::reset()
 {
-    int i;
-
     str->reset();
-    for (i = 0; i < bufSize; ++i) {
-        buf[i] = str->getChar();
+    purgeBuffer();
+}
+
+int BufStream::lookAheadChar(int idx)
+{
+    assert(idx < streamBufSize);
+    int remaining = bufEnd - bufPtr;
+    if (idx > remaining) {
+        memmove(buf, bufPtr, remaining);
+        bufPtr = buf;
+        while (idx > remaining) {
+            int got = getSomeChars(streamBufSize - remaining, buf + remaining);
+            if (got == 0) {
+                return EOF;
+            }
+            remaining += got;
+        }
+        bufEnd = buf + remaining;
     }
-}
-
-int BufStream::getChar()
-{
-    int c, i;
-
-    c = buf[0];
-    for (i = 1; i < bufSize; ++i) {
-        buf[i - 1] = buf[i];
-    }
-    buf[bufSize - 1] = str->getChar();
-    return c;
-}
-
-int BufStream::lookChar()
-{
-    return buf[0];
-}
-
-int BufStream::lookChar(int idx)
-{
-    return buf[idx];
+    return bufPtr[idx];
 }
 
 bool BufStream::isBinary(bool last) const
@@ -4734,20 +4462,12 @@ void FixedLengthEncoder::reset()
     count = 0;
 }
 
-int FixedLengthEncoder::getChar()
+int FixedLengthEncoder::getRawChar()
 {
     if (length >= 0 && count >= length) {
         return EOF;
     }
     ++count;
-    return str->getChar();
-}
-
-int FixedLengthEncoder::lookChar()
-{
-    if (length >= 0 && count >= length) {
-        return EOF;
-    }
     return str->getChar();
 }
 
@@ -5055,7 +4775,7 @@ void LZWEncoder::reset()
     needEOD = false;
 }
 
-int LZWEncoder::getChar()
+int LZWEncoder::getRawChar()
 {
     int ret;
 
@@ -5073,21 +4793,6 @@ int LZWEncoder::getChar()
         outBufLen = 0;
     }
     return ret;
-}
-
-int LZWEncoder::lookChar()
-{
-    if (inBufLen == 0 && !needEOD && outBufLen == 0) {
-        return EOF;
-    }
-    if (outBufLen < 8 && (inBufLen > 0 || needEOD)) {
-        fillBuf();
-    }
-    if (outBufLen >= 8) {
-        return (outBuf >> (outBufLen - 8)) & 0xff;
-    } else {
-        return (outBuf << (8 - outBufLen)) & 0xff;
-    }
 }
 
 // On input, outBufLen < 8.
@@ -5281,19 +4986,12 @@ void SplashBitmapCMYKEncoder::reset()
     curLine = height - 1;
 }
 
-int SplashBitmapCMYKEncoder::lookChar()
+int SplashBitmapCMYKEncoder::getRawChar()
 {
     if (bufPtr >= width && !fillBuf()) {
         return EOF;
     }
-    return buf[bufPtr];
-}
-
-int SplashBitmapCMYKEncoder::getChar()
-{
-    int ret = lookChar();
-    bufPtr++;
-    return ret;
+    return buf[bufPtr++];
 }
 
 bool SplashBitmapCMYKEncoder::fillBuf()
@@ -5312,7 +5010,7 @@ bool SplashBitmapCMYKEncoder::fillBuf()
     return true;
 }
 
-Goffset SplashBitmapCMYKEncoder::getPos()
+Goffset SplashBitmapCMYKEncoder::getRawPos()
 {
     return (height - 1 - curLine) * width + bufPtr;
 }

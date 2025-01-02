@@ -290,13 +290,16 @@ public:
     StreamKind getKind() const override { return strJPX; }
     void reset() override;
     void close() override;
-    int getChar() override;
-    int lookChar() override;
+
     GooString *getPSFilter(int psLevel, const char *indent) override;
     bool isBinary(bool last = true) const override;
     void getImageParams(int *bitsPerComponent, StreamColorSpaceMode *csMode, bool *hasAlpha) override;
 
+    polyfillGetSomeChars(getRawChar);
+
 private:
+    int getRawChar();
+
     void fillReadBuf();
     void getImageParams2(int *bitsPerComponent, StreamColorSpaceMode *csMode);
     bool readBoxes();

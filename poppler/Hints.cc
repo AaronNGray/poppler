@@ -186,33 +186,26 @@ void Hints::readTables(BaseStream *str, Linearization *linearization, XRef *xref
     }
 
     std::vector<char> buf(bufLength);
-    char *p = &buf[0];
+    char *p = buf.data();
 
     if (hintsOffset && hintsLength) {
         std::unique_ptr<Stream> s(str->makeSubStream(hintsOffset, false, hintsLength, Object(objNull)));
         s->reset();
-        for (unsigned int i = 0; i < hintsLength; i++) {
-            const int c = s->getChar();
-            if (unlikely(c == EOF)) {
-                error(errSyntaxWarning, -1, "Found EOF while reading hints");
-                ok = false;
-                return;
-            }
-            *p++ = c;
+        if (s->doGetChars(hintsLength, (unsigned char *)p) < (int)hintsLength) {
+            error(errSyntaxWarning, -1, "Found EOF while reading hints");
+            ok = false;
+            return;
         }
+        p += hintsLength;
     }
 
     if (hintsOffset2 && hintsLength2) {
         std::unique_ptr<Stream> s(str->makeSubStream(hintsOffset2, false, hintsLength2, Object(objNull)));
         s->reset();
-        for (unsigned int i = 0; i < hintsLength2; i++) {
-            const int c = s->getChar();
-            if (unlikely(c == EOF)) {
-                error(errSyntaxWarning, -1, "Found EOF while reading hints2");
-                ok = false;
-                return;
-            }
-            *p++ = c;
+        if (s->doGetChars(hintsLength2, (unsigned char *)p) < (int)hintsLength2) {
+            error(errSyntaxWarning, -1, "Found EOF while reading hints2");
+            ok = false;
+            return;
         }
     }
 
@@ -235,9 +228,7 @@ void Hints::readTables(BaseStream *str, Linearization *linearization, XRef *xref
 
             if (ok) {
                 hintsStream->reset();
-                for (int i = 0; i < sharedStreamOffset; i++) {
-                    hintsStream->getChar();
-                }
+                hintsStream->discardChars(sharedStreamOffset);
                 ok = readSharedObjectsTable(hintsStream);
             }
         } else {
