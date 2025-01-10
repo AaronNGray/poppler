@@ -13,7 +13,7 @@ macro(UPDATE_POT_FILE input)
   foreach(_lang ${_langs})
     set(_poFile "${CMAKE_CURRENT_SOURCE_DIR}/${_lang}/${input}.po")
     list(APPEND _commands
-      COMMAND ${GETTEXT_MSGMERGE_EXECUTABLE} --quiet --update --backup=none -F ${_poFile} "${CMAKE_CURRENT_SOURCE_DIR}/${_potFile}")
+      COMMAND ${GETTEXT_MSGMERGE_EXECUTABLE} --quiet -F ${_poFile} "${CMAKE_CURRENT_SOURCE_DIR}/${_potFile}" -o "${CMAKE_CURRENT_BINARY_DIR}/${_lang}/${input}.po")
   endforeach()
 
   set(COPY_NEW_POTFILE ${CMAKE_COMMAND} -E copy po/${_potFile}.new po/${_potFile})
@@ -24,7 +24,7 @@ macro(UPDATE_POT_FILE input)
     set(CM ${COPY_NEW_POTFILE})
   endif ()
 
-  add_custom_command(OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/${_potFile}.new
+  add_custom_command(OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/${_potFile}.new ${CMAKE_CURRENT_BINARY_DIR}/${_lang}/${input}.po
                      COMMAND xgettext ${input}.cc --package-name=${input} --keyword=_ -F --output=po/${_potFile}.new
                      COMMAND ${CM}
                      ${_commands}
@@ -32,7 +32,7 @@ macro(UPDATE_POT_FILE input)
                      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/..)
   add_custom_target(update_pot_${input}
                     ALL
-                    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/${_potFile}.new)
+                    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/${_potFile}.new ${CMAKE_CURRENT_BINARY_DIR}/${_lang}/${input}.po)
 endmacro()
 
 UPDATE_POT_FILE(pdfsig)
