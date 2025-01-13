@@ -119,6 +119,7 @@ void DCTStream::reset()
     int row_stride;
 
     str->reset();
+    purgeBuffer();
 
     if (row_buffer) {
         jpeg_destroy_decompress(&cinfo);

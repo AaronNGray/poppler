@@ -1172,8 +1172,9 @@ void JBIG2Stream::reset()
     }
 
     // read the main stream
+    str->reset();
+    purgeBuffer();
     curStr = str;
-    curStr->reset();
     arithDecoder->setStream(curStr);
     huffDecoder->setStream(curStr);
     mmrDecoder->setStream(curStr);

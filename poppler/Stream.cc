@@ -1573,8 +1573,8 @@ RunLengthStream::~RunLengthStream()
 void RunLengthStream::reset()
 {
     str->reset();
-    bufPtr = bufEnd = buf;
     purgeBuffer();
+    bufPtr = bufEnd = buf;
     eof = false;
 }
 
@@ -4459,6 +4459,7 @@ FixedLengthEncoder::~FixedLengthEncoder()
 void FixedLengthEncoder::reset()
 {
     str->reset();
+    purgeBuffer();
     count = 0;
 }
 
@@ -4498,6 +4499,7 @@ void ASCIIHexEncoder::reset()
 {
     str->reset();
     bufPtr = bufEnd = buf;
+    purgeBuffer();
     lineLen = 0;
     eof = false;
 }
@@ -4547,6 +4549,7 @@ ASCII85Encoder::~ASCII85Encoder()
 void ASCII85Encoder::reset()
 {
     str->reset();
+    purgeBuffer();
     bufPtr = bufEnd = buf;
     lineLen = 0;
     eof = false;
@@ -4642,6 +4645,7 @@ RunLengthEncoder::~RunLengthEncoder()
 void RunLengthEncoder::reset()
 {
     str->reset();
+    purgeBuffer();
     bufPtr = bufEnd = nextEnd = buf;
     eof = false;
 }
@@ -4756,6 +4760,7 @@ void LZWEncoder::reset()
     int i;
 
     str->reset();
+    purgeBuffer();
 
     // initialize code table
     for (i = 0; i < 256; ++i) {
@@ -4888,6 +4893,7 @@ CMYKGrayEncoder::~CMYKGrayEncoder()
 void CMYKGrayEncoder::reset()
 {
     str->reset();
+    purgeBuffer();
     bufPtr = bufEnd = buf;
     eof = false;
 }
@@ -4937,6 +4943,7 @@ RGBGrayEncoder::~RGBGrayEncoder()
 void RGBGrayEncoder::reset()
 {
     str->reset();
+    purgeBuffer();
     bufPtr = bufEnd = buf;
     eof = false;
 }
@@ -4982,6 +4989,7 @@ SplashBitmapCMYKEncoder::~SplashBitmapCMYKEncoder() = default;
 
 void SplashBitmapCMYKEncoder::reset()
 {
+    purgeBuffer();
     bufPtr = width;
     curLine = height - 1;
 }
