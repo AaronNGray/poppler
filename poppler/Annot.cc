@@ -268,7 +268,7 @@ static const char *getFormAdditionalActionKey(Annot::FormAdditionalActionsType t
     return (type == Annot::actionFieldModified ? "K" : type == Annot::actionFormatField ? "F" : type == Annot::actionValidateField ? "V" : type == Annot::actionCalculateField ? "C" : nullptr);
 }
 
-static const char *determineFallbackFont(const std::string &tok, const char *defaultFallback)
+const char *Annot::determineFallbackFont(const std::string &tok, const char *defaultFallback)
 {
     // TODO: adjust these based on other example PDFs.
     if (tok == "/ZaDb") {
@@ -279,7 +279,10 @@ static const char *determineFallbackFont(const std::string &tok, const char *def
         return "TimesNewRoman";
     } else if (tok == "/Helvetica-Bold") {
         return "Helvetica-Bold";
+    } else if (tok == "/Helvetica") {
+        return "Helvetica";
     }
+
     return defaultFallback;
 }
 
@@ -4564,7 +4567,7 @@ bool AnnotAppearanceBuilder::drawText(const GooString *text, const Form *form, c
         if (!tok.empty() && tok[0] == '/') {
             if (!resources || !(font = resources->lookupFont(tok.c_str() + 1).get())) {
                 if (xref != nullptr && resourcesDict != nullptr) {
-                    const char *fallback = determineFallbackFont(tok, forceZapfDingbats ? "ZapfDingbats" : "Helvetica");
+                    const char *fallback = Annot::determineFallbackFont(tok, forceZapfDingbats ? "ZapfDingbats" : "Helvetica");
                     // The font variable sometimes points to an object that needs to be deleted
                     // and sometimes not, depending on whether the call to lookupFont above fails.
                     // When the code path right here is taken, the destructor of fontToFree
@@ -4883,7 +4886,7 @@ bool AnnotAppearanceBuilder::drawListBox(const FormFieldChoice *fieldChoice, con
         if (tok->getLength() >= 1 && tok->getChar(0) == '/') {
             if (!resources || !(font = resources->lookupFont(tok->c_str() + 1).get())) {
                 if (xref != nullptr && resourcesDict != nullptr) {
-                    const char *fallback = determineFallbackFont(tok->toStr(), "Helvetica");
+                    const char *fallback = Annot::determineFallbackFont(tok->toStr(), "Helvetica");
                     // The font variable sometimes points to an object that needs to be deleted
                     // and sometimes not, depending on whether the call to lookupFont above fails.
                     // When the code path right here is taken, the destructor of fontToFree

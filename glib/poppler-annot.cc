@@ -504,11 +504,6 @@ static const FontstyleMap string_to_fontstyle = { { "UltraCondensed", std::pair(
 
 static const char *stretch_to_str[] = { "UltraCondensed", "ExtraCondensed", "Condensed", "SemiCondensed", /* Normal */ "", "SemiExpanded", "Expanded", "ExtraExpanded", "UltraExpanded" };
 
-const std::map<std::string, std::string> fallback_fonts = {
-    { "/Helvetica", "Helvetica" }, /* iOS */
-    { "Helv", "Helvetica" } /* Firefox */
-};
-
 static bool update_font_desc_with_word(PopplerFontDescription &font_desc, std::string &word)
 {
     FontstyleMap::const_iterator a = string_to_fontstyle.find(word);
@@ -550,7 +545,48 @@ static void poppler_font_name_to_description(const std::string &name, PopplerFon
 
         end = start;
     }
+    g_free(font_desc.font_name);
     font_desc.font_name = g_strdup(name.substr(0, end).c_str());
+}
+
+static std::shared_ptr<GfxFont> poppler_annot_lookup_font(Annot *annot, const char *font_name)
+{
+    std::shared_ptr<GfxFont> font;
+
+    /* look up in the Annot's default appearance Resources dictionary (Annot -> AP -> N -> Resources) */
+    Object appearance_resources = annot->getAppearanceResDict();
+    if (appearance_resources.isDict()) {
+        GfxResources AnnotResources(annot->getDoc()->getXRef(), appearance_resources.getDict(), nullptr);
+        font = AnnotResources.lookupFont(font_name);
+        if (font && font->getName()) {
+            return font;
+        }
+    }
+
+    /* look up in the Resources dictionary of the Page that annot is in (Annot ⬆ Page -> Resources) */
+    Page *page = annot->getDoc()->getPage(annot->getPageNum());
+    Dict *page_res_dict = page ? page->getResourceDict() : nullptr;
+    if (page_res_dict && page_res_dict->getLength()) {
+        GfxResources PageResources(annot->getDoc()->getXRef(), page_res_dict, nullptr);
+        font = PageResources.lookupFont(font_name);
+        if (font && font->getName()) {
+            return font;
+        }
+    }
+
+    /* look up in Form's default Resource dictionary (AcroForm -> DR) */
+    Form *form = annot->getDoc()->getCatalog()->getForm();
+    if (form) {
+        GfxResources *res = form->getDefaultResources();
+        if (res) {
+            font = res->lookupFont(font_name);
+            if (font && font->getName()) {
+                return font;
+            }
+        }
+    }
+
+    return nullptr;
 }
 
 PopplerAnnot *_poppler_annot_free_text_new(Annot *annot)
@@ -564,20 +600,15 @@ PopplerAnnot *_poppler_annot_free_text_new(Annot *annot)
         desc->size_pt = da->getFontPtSize();
 
         /* Attempt to resolve the actual font name. */
-        Form *form = annot->getDoc()->getCatalog()->getCreateForm();
-        if (form) {
-            GfxResources *res = form->getDefaultResources();
-            if (res) {
-                std::shared_ptr<GfxFont> font = res->lookupFont(desc->font_name);
-                if (font && font->getName()) {
-                    poppler_font_name_to_description(font->getName().value(), *desc);
-                }
+        std::shared_ptr<GfxFont> font = poppler_annot_lookup_font(annot, desc->font_name);
+        if (font && font->getName()) {
+            poppler_font_name_to_description(font->getName().value(), *desc);
+        } else {
+            const char *fallback_name = Annot::determineFallbackFont(std::string(desc->font_name), desc->font_name);
+            if (fallback_name != desc->font_name && strcmp(fallback_name, desc->font_name) != 0) {
+                g_free(desc->font_name);
+                desc->font_name = g_strdup(fallback_name);
             }
-        }
-
-        std::map<std::string, std::string>::const_iterator fallback_font = fallback_fonts.find(std::string(desc->font_name));
-        if (fallback_font != fallback_fonts.end()) {
-            desc->font_name = g_strdup(fallback_font->second.c_str());
         }
     }
 

@@ -720,6 +720,7 @@ public:
     bool isOk() { return ok; }
 
     static double calculateFontSize(const Form *form, const GfxFont *font, const GooString *text, const double wMax, const double hMax, const bool forceZapfDingbats = {});
+    static const char *determineFallbackFont(const std::string &tok, const char *defaultFallback);
 
     void incRefCnt();
     void decRefCnt();
