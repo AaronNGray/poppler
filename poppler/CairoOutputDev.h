@@ -96,6 +96,56 @@ private:
 };
 
 //------------------------------------------------------------------------
+// SoftMaskedImageCache
+//------------------------------------------------------------------------
+class SoftMaskedImageCache
+{
+public:
+    struct Item
+    {
+        Ref ref;
+        bool printing;
+        int width;
+        int height;
+        cairo_pattern_t *pattern;
+        struct MaskImg
+        {
+            int width;
+            int height;
+            cairo_pattern_t *pattern;
+        } mask;
+    };
+
+    // Constructor that allows to set MAX_ELEMS
+    explicit SoftMaskedImageCache(int maxElems) : MAX_ELEMS(maxElems) { }
+
+    // Destructor
+    ~SoftMaskedImageCache();
+
+    // Method to add an element, only if there's space
+    bool add(const Item &item);
+
+    // Method to remove an element passed by reference
+    bool remove(const Item &item);
+
+    // Method to find an element and return a reference to it
+    Item *find(const Item &item);
+
+    // Method to get the number of current cached elements
+    int nItems() const { return (int)data.size(); }
+
+    // Method to get the number of maximum allowed cached elements
+    int maxItems() const { return MAX_ELEMS; }
+
+private:
+    bool equals(const Item &a, const Item &b);
+    bool equals(const Item::MaskImg a, const Item::MaskImg b);
+
+    const int MAX_ELEMS; // maximum number of cached elements
+    std::vector<Item> data;
+};
+
+//------------------------------------------------------------------------
 // CairoOutputDev
 //------------------------------------------------------------------------
 
@@ -401,6 +451,8 @@ protected:
     std::unordered_set<std::pair<int, int>, StructParentsMcidHash> mcidEmitted; // <structParent, MCID>
 
     std::unordered_set<const StructElement *> structElementNeeded;
+
+    SoftMaskedImageCache *softMaskedImgCache;
 };
 
 //------------------------------------------------------------------------

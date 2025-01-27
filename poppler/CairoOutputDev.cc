@@ -87,6 +87,15 @@
 // coordinate handling, namely INT16_MAX, aka 32767.
 #define MAX_CAIRO_IMAGE_SIZE 32767
 
+// We cache SoftMaskedImages when they're bigger than this amount of pixels.
+// (1147 * 1623) corresponds to an image of paper A4 size in a 138.75 dpi display (eg. 3840x2160 32'' monitor)
+#define SOFT_MASKED_IMAGES_CACHE_PIXELS_THRESOLD (1147 * 1623)
+
+// We set here the max number of those images we will cache.
+// We set a small value as those images are big in memory and anyway for the case
+// of issue #991 (which motivated this cache) just 1 cached image is enough.
+#define SOFT_MASKED_IMAGES_CACHE_MAX 4
+
 #ifdef LOG_CAIRO
 #    define LOG(x) (x)
 #else
@@ -122,6 +131,73 @@ void CairoImage::setImage(cairo_surface_t *i)
         cairo_surface_destroy(image);
     }
     image = cairo_surface_reference(i);
+}
+
+//------------------------------------------------------------------------
+// SoftMaskedImageCache
+//------------------------------------------------------------------------
+using Item = SoftMaskedImageCache::Item;
+
+SoftMaskedImageCache::~SoftMaskedImageCache()
+{
+    for (auto &elem : data) {
+        cairo_pattern_destroy(elem.pattern);
+        cairo_pattern_destroy(elem.mask.pattern);
+    }
+    data.clear();
+}
+
+// Method to add an element, only if there's space
+bool SoftMaskedImageCache::add(const Item &item)
+{
+    if ((int)data.size() < MAX_ELEMS) {
+        data.push_back(item);
+        return true;
+    } else {
+        return false; // cache is full
+    }
+}
+
+// Method to remove an element passed by reference
+bool SoftMaskedImageCache::remove(const Item &item)
+{
+    std::vector<Item>::iterator it;
+    for (it = data.begin(); it != data.end(); it++) {
+        if (&(*it) == &item) {
+            data.erase(it);
+            return true;
+        }
+    }
+    return false;
+}
+
+// Method to find an element and return a reference to it
+Item *SoftMaskedImageCache::find(const Item &item)
+{
+    for (auto &elem : data) {
+        if (equals(elem, item) && equals(elem.mask, item.mask)) {
+            return &elem;
+        }
+    }
+    return nullptr;
+}
+
+bool SoftMaskedImageCache::equals(const Item &a, const Item &b)
+{
+    if (a.ref == b.ref && a.printing == b.printing) {
+        if (a.width == b.width && a.height == b.height) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool SoftMaskedImageCache::equals(const Item::MaskImg a, const Item::MaskImg b)
+{
+    if (a.width == b.width && a.height == b.height) {
+        return true;
+    }
+    return false;
 }
 
 //------------------------------------------------------------------------
@@ -184,6 +260,7 @@ CairoOutputDev::CairoOutputDev()
     adjusted_stroke_width = false;
     xref = nullptr;
     currentStructParents = -1;
+    softMaskedImgCache = new SoftMaskedImageCache(SOFT_MASKED_IMAGES_CACHE_MAX);
 }
 
 CairoOutputDev::~CairoOutputDev()
@@ -214,6 +291,7 @@ CairoOutputDev::~CairoOutputDev()
         textPage->decRefCnt();
     }
     delete actualText;
+    delete softMaskedImgCache;
 }
 
 void CairoOutputDev::setCairo(cairo_t *c)
@@ -2924,20 +3002,55 @@ void CairoOutputDev::drawSoftMaskedImage(GfxState *state, Object *ref, Stream *s
     int y;
     cairo_filter_t filter;
     cairo_filter_t maskFilter;
+    const GfxColor *matteColor;
     GfxRGB matteColorRgb;
+    bool saveToCache;
+    SoftMaskedImageCache::Item newCacheItem;
+    SoftMaskedImageCache::Item *cacheItem = nullptr;
+    imgStr = nullptr;
 
     // Clamp heights to what Cairo can handle - Issue #991
     if (height >= MAX_CAIRO_IMAGE_SIZE) {
-        error(errInternal, -1, "Reducing image height from {0:d} to {1:d} because of Cairo limits", height, MAX_CAIRO_IMAGE_SIZE - 1);
+        LOG(printf("Reducing image height from %d to %d because of Cairo limits\n", height, MAX_CAIRO_IMAGE_SIZE - 1));
         height = MAX_CAIRO_IMAGE_SIZE - 1;
     }
 
     if (maskHeight >= MAX_CAIRO_IMAGE_SIZE) {
-        error(errInternal, -1, "Reducing maskImage height from {0:d} to {1:d} because of Cairo limits", maskHeight, MAX_CAIRO_IMAGE_SIZE - 1);
+        LOG(printf("Reducing maskImage height from %d to %d because of Cairo limits\n", maskHeight, MAX_CAIRO_IMAGE_SIZE - 1));
         maskHeight = MAX_CAIRO_IMAGE_SIZE - 1;
     }
 
-    const GfxColor *matteColor = maskColorMap->getMatteColor();
+    // Condition to decide whether to cache image: having a valid Ref and image being large enough
+    saveToCache = ref->isRef() && (maskHeight * maskWidth > SOFT_MASKED_IMAGES_CACHE_PIXELS_THRESOLD || height * width > SOFT_MASKED_IMAGES_CACHE_PIXELS_THRESOLD);
+    if (saveToCache) {
+        newCacheItem.ref = ref->getRef();
+        newCacheItem.printing = printing;
+        newCacheItem.width = width;
+        newCacheItem.height = height;
+        newCacheItem.mask.width = maskWidth;
+        newCacheItem.mask.height = maskHeight;
+
+        cacheItem = softMaskedImgCache->find(newCacheItem);
+        if (cacheItem) {
+            LOG(printf("Found SoftMaskedImage cache item for image with Ref(%d,%d)\n", ref->getRefNum(), ref->getRefGen()));
+            saveToCache = false;
+            pattern = cacheItem->pattern;
+            maskPattern = cacheItem->mask.pattern;
+            if (!cairo_pattern_status(pattern) && !cairo_pattern_status(maskPattern)) {
+                cairo_pattern_reference(pattern);
+                cairo_pattern_reference(maskPattern);
+                goto cacheLabel;
+            }
+            // This codepath is unlikely to happen (patterns changing to bad status) but let's handle it just in case
+            LOG(printf("SoftMaskedImage cache item with Ref(%d,%d) discarded because of bad status patterns\n", ref->getRefNum(), ref->getRefGen()));
+            cairo_pattern_destroy(pattern);
+            cairo_pattern_destroy(maskPattern);
+            softMaskedImgCache->remove(*cacheItem);
+            cacheItem = nullptr;
+        }
+    }
+
+    matteColor = maskColorMap->getMatteColor();
     if (matteColor != nullptr) {
         getMatteColorRgb(colorMap, matteColor, &matteColorRgb);
     }
@@ -2983,7 +3096,6 @@ void CairoOutputDev::drawSoftMaskedImage(GfxState *state, Object *ref, Stream *s
 		   ((GfxICCBasedColorSpace*)colorMap->getColorSpace())->getAlt()->getMode() == csDeviceRGB);
 #endif
 
-    /* TODO: Do we want to cache these? */
     imgStr = new ImageStream(str, width, colorMap->getNumPixelComps(), colorMap->getBits());
     imgStr->reset();
 
@@ -3048,6 +3160,23 @@ void CairoOutputDev::drawSoftMaskedImage(GfxState *state, Object *ref, Stream *s
         goto cleanup;
     }
 
+    if (saveToCache) {
+        newCacheItem.pattern = cairo_pattern_reference(pattern);
+        newCacheItem.mask.pattern = cairo_pattern_reference(maskPattern);
+        if (softMaskedImgCache->add(newCacheItem)) {
+            LOG(printf("Image at Ref(%d,%d) saved to cache as item nº %d out of %d maximum\n", ref->getRefNum(), ref->getRefGen(), softMaskedImgCache->nItems(), softMaskedImgCache->maxItems()));
+        } else {
+            LOG(printf("SoftMaskedImageCache is full, cannot add more elements.\n"));
+            cairo_pattern_destroy(pattern);
+            cairo_pattern_destroy(maskPattern);
+        }
+    }
+
+cacheLabel:
+    if (cacheItem) { // arrived here from cacheLabel
+        LOG(printf("drawSoftMaskedImage %dx%d (from cache)\n", width, height));
+    }
+
     if (fill_opacity != 1.0) {
         cairo_push_group(cairo);
     } else {
@@ -3088,8 +3217,10 @@ void CairoOutputDev::drawSoftMaskedImage(GfxState *state, Object *ref, Stream *s
     cairo_pattern_destroy(pattern);
 
 cleanup:
-    imgStr->close();
-    delete imgStr;
+    if (imgStr) {
+        imgStr->close();
+        delete imgStr;
+    }
 }
 
 bool CairoOutputDev::getStreamData(Stream *str, char **buffer, int *length)
