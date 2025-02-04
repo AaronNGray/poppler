@@ -3713,7 +3713,7 @@ void SplashOutputDev::drawSoftMaskedImage(GfxState *state, Object * /* ref */, S
     maskSplash = new Splash(maskBitmap, vectorAntialias);
     maskColor[0] = 0;
     maskSplash->clear(maskColor);
-    maskSplash->drawImage(&imageSrc, nullptr, &imgMaskData, splashModeMono8, false, maskWidth, maskHeight, mat, maskInterpolate);
+    maskSplash->drawImage(&imageSrc, nullptr, &imgMaskData, splashModeMono8, false, maskWidth, maskHeight, mat, maskInterpolate, false, true);
     delete imgMaskData.imgStr;
     if (maskColorMap->getMatteColor() == nullptr) {
         maskStr->close();
@@ -3815,7 +3815,7 @@ void SplashOutputDev::drawSoftMaskedImage(GfxState *state, Object * /* ref */, S
     } else {
         srcMode = colorMode;
     }
-    splash->drawImage(&imageSrc, nullptr, &imgData, srcMode, false, width, height, mat, interpolate);
+    splash->drawImage(&imageSrc, nullptr, &imgData, srcMode, false, width, height, mat, interpolate, false, true);
     splash->setSoftMask(nullptr);
     gfree(imgData.lookup);
     delete imgData.maskStr;

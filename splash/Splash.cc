@@ -3509,7 +3509,7 @@ void Splash::blitMask(SplashBitmap *src, int xDest, int yDest, SplashClipResult 
     }
 }
 
-SplashError Splash::drawImage(SplashImageSource src, SplashICCTransform tf, void *srcData, SplashColorMode srcMode, bool srcAlpha, int w, int h, SplashCoord *mat, bool interpolate, bool tilingPattern)
+SplashError Splash::drawImage(SplashImageSource src, SplashICCTransform tf, void *srcData, SplashColorMode srcMode, bool srcAlpha, int w, int h, SplashCoord *mat, bool interpolate, bool tilingPattern, bool forSoftmask)
 {
     bool ok;
     SplashBitmap *scaledImg;
@@ -3589,7 +3589,7 @@ SplashError Splash::drawImage(SplashImageSource src, SplashICCTransform tf, void
             if (yp < 0 || yp > INT_MAX - 1) {
                 return splashErrBadArg;
             }
-            scaledImg = scaleImage(src, srcData, srcMode, nComps, srcAlpha, w, h, scaledWidth, scaledHeight, interpolate, tilingPattern);
+            scaledImg = scaleImage(src, srcData, srcMode, nComps, srcAlpha, w, h, scaledWidth, scaledHeight, interpolate, tilingPattern, forSoftmask);
             if (scaledImg == nullptr) {
                 return splashErrBadArg;
             }
@@ -3629,7 +3629,7 @@ SplashError Splash::drawImage(SplashImageSource src, SplashICCTransform tf, void
             if (yp < 0 || yp > INT_MAX - 1) {
                 return splashErrBadArg;
             }
-            scaledImg = scaleImage(src, srcData, srcMode, nComps, srcAlpha, w, h, scaledWidth, scaledHeight, interpolate, tilingPattern);
+            scaledImg = scaleImage(src, srcData, srcMode, nComps, srcAlpha, w, h, scaledWidth, scaledHeight, interpolate, tilingPattern, forSoftmask);
             if (scaledImg == nullptr) {
                 return splashErrBadArg;
             }
@@ -3643,14 +3643,14 @@ SplashError Splash::drawImage(SplashImageSource src, SplashICCTransform tf, void
 
         // all other cases
     } else {
-        return arbitraryTransformImage(src, tf, srcData, srcMode, nComps, srcAlpha, w, h, mat, interpolate, tilingPattern);
+        return arbitraryTransformImage(src, tf, srcData, srcMode, nComps, srcAlpha, w, h, mat, interpolate, tilingPattern, forSoftmask);
     }
 
     return splashOk;
 }
 
 SplashError Splash::arbitraryTransformImage(SplashImageSource src, SplashICCTransform tf, void *srcData, SplashColorMode srcMode, int nComps, bool srcAlpha, int srcWidth, int srcHeight, SplashCoord *mat, bool interpolate,
-                                            bool tilingPattern)
+                                            bool tilingPattern, bool forSoftmask)
 {
     SplashBitmap *scaledImg;
     SplashClipResult clipRes, clipRes2;
@@ -3794,7 +3794,7 @@ SplashError Splash::arbitraryTransformImage(SplashImageSource src, SplashICCTran
     if (yp < 0 || yp > INT_MAX - 1) {
         return splashErrBadArg;
     }
-    scaledImg = scaleImage(src, srcData, srcMode, nComps, srcAlpha, srcWidth, srcHeight, scaledWidth, scaledHeight, interpolate);
+    scaledImg = scaleImage(src, srcData, srcMode, nComps, srcAlpha, srcWidth, srcHeight, scaledWidth, scaledHeight, interpolate, forSoftmask);
 
     if (scaledImg == nullptr) {
         return splashErrBadArg;
@@ -3968,14 +3968,14 @@ SplashError Splash::arbitraryTransformImage(SplashImageSource src, SplashICCTran
 
 // determine if a scaled image requires interpolation based on the scale and
 // the interpolate flag from the image dictionary
-static bool isImageInterpolationRequired(int srcWidth, int srcHeight, int scaledWidth, int scaledHeight, bool interpolate)
+static bool isImageInterpolationRequired(int srcWidth, int srcHeight, int scaledWidth, int scaledHeight, bool interpolate, bool dontInterpolate)
 {
     if (interpolate || srcWidth == 0 || srcHeight == 0) {
         return true;
     }
 
     /* When scale factor is >= 400% we don't interpolate. See bugs #25268, #9860 */
-    if (scaledWidth / srcWidth >= 4 || scaledHeight / srcHeight >= 4) {
+    if (scaledWidth / srcWidth >= 4 || scaledHeight / srcHeight >= 4 || dontInterpolate) {
         return false;
     }
 
@@ -3983,7 +3983,8 @@ static bool isImageInterpolationRequired(int srcWidth, int srcHeight, int scaled
 }
 
 // Scale an image into a SplashBitmap.
-SplashBitmap *Splash::scaleImage(SplashImageSource src, void *srcData, SplashColorMode srcMode, int nComps, bool srcAlpha, int srcWidth, int srcHeight, int scaledWidth, int scaledHeight, bool interpolate, bool tilingPattern)
+SplashBitmap *Splash::scaleImage(SplashImageSource src, void *srcData, SplashColorMode srcMode, int nComps, bool srcAlpha, int srcWidth, int srcHeight, int scaledWidth, int scaledHeight, bool interpolate, bool tilingPattern,
+                                 bool forSoftmask)
 {
     SplashBitmap *dest;
 
@@ -4000,7 +4001,7 @@ SplashBitmap *Splash::scaleImage(SplashImageSource src, void *srcData, SplashCol
             if (scaledWidth < srcWidth) {
                 success = scaleImageYupXdown(src, srcData, srcMode, nComps, srcAlpha, srcWidth, srcHeight, scaledWidth, scaledHeight, dest);
             } else {
-                if (!tilingPattern && isImageInterpolationRequired(srcWidth, srcHeight, scaledWidth, scaledHeight, interpolate)) {
+                if (!tilingPattern && isImageInterpolationRequired(srcWidth, srcHeight, scaledWidth, scaledHeight, interpolate, forSoftmask)) {
                     success = scaleImageYupXupBilinear(src, srcData, srcMode, nComps, srcAlpha, srcWidth, srcHeight, scaledWidth, scaledHeight, dest);
                 } else {
                     success = scaleImageYupXup(src, srcData, srcMode, nComps, srcAlpha, srcWidth, srcHeight, scaledWidth, scaledHeight, dest);
