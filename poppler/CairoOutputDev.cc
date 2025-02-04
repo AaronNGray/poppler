@@ -282,6 +282,11 @@ void CairoOutputDev::startDoc(PDFDoc *docA, CairoFontEngine *parentFontEngine)
         fontEngine_owner = true;
     }
     xref = doc->getXRef();
+    if (!xref->cache.cairoSurface) {
+        xref->cache.cairoSurface =
+                std::make_unique<GenericCache<std::unique_ptr<FreeableObject>>>(25 * 1024 * 1024); // 25 MB. 10MB is needed for a 1920x1080 rgba image, so 25 MB should be enough for most cases (two backgrounds + misc images)
+    }
+    cairoSurfaceCache = xref->cache.cairoSurface.get();
 
     mcidEmitted.clear();
     destsMap.clear();
@@ -2798,22 +2803,29 @@ void CairoOutputDev::drawMaskedImage(GfxState *state, Object *ref, Stream *str, 
 		  (colorMap->getColorSpace()->getMode() == csICCBased &&
 		   ((GfxICCBasedColorSpace*)colorMap->getColorSpace())->getAlt()->getMode() == csDeviceRGB);
 #endif
+    if (cairoSurfaceCache->contains(ref)) {
+        image = cairo_surface_reference(static_cast<CairoImage *>(cairoSurfaceCache->get(ref->getRef()).get())->getImage());
+    } else {
+        imgStr = new ImageStream(str, width, colorMap->getNumPixelComps(), colorMap->getBits());
+        imgStr->reset();
 
-    /* TODO: Do we want to cache these? */
-    imgStr = new ImageStream(str, width, colorMap->getNumPixelComps(), colorMap->getBits());
-    imgStr->reset();
+        image = cairo_image_surface_create(CAIRO_FORMAT_RGB24, width, height);
+        if (cairo_surface_status(image)) {
+            return;
+        }
 
-    image = cairo_image_surface_create(CAIRO_FORMAT_RGB24, width, height);
-    if (cairo_surface_status(image)) {
-        goto cleanup;
-    }
-
-    buffer = cairo_image_surface_get_data(image);
-    row_stride = cairo_image_surface_get_stride(image);
-    for (y = 0; y < height; y++) {
-        dest = reinterpret_cast<unsigned int *>(buffer + y * row_stride);
-        pix = imgStr->getLine();
-        colorMap->getRGBLine(pix, dest, width);
+        buffer = cairo_image_surface_get_data(image);
+        row_stride = cairo_image_surface_get_stride(image);
+        for (y = 0; y < height; y++) {
+            dest = reinterpret_cast<unsigned int *>(buffer + y * row_stride);
+            pix = imgStr->getLine();
+            colorMap->getRGBLine(pix, dest, width);
+        }
+        std::unique_ptr<CairoImage> cachedImg = std::make_unique<CairoImage>(0., 0., 0., 0.);
+        cachedImg->setImage(image);
+        cairoSurfaceCache->set(ref, std::move(cachedImg), cairo_image_surface_get_stride(image) * height);
+        imgStr->close();
+        delete imgStr;
     }
 
     filter = getFilterForSurface(image, interpolate);
@@ -2822,7 +2834,7 @@ void CairoOutputDev::drawMaskedImage(GfxState *state, Object *ref, Stream *str, 
     pattern = cairo_pattern_create_for_surface(image);
     cairo_surface_destroy(image);
     if (cairo_pattern_status(pattern)) {
-        goto cleanup;
+        return;
     }
 
     LOG(printf("drawMaskedImage %dx%d\n", width, height));
@@ -2841,7 +2853,7 @@ void CairoOutputDev::drawMaskedImage(GfxState *state, Object *ref, Stream *str, 
     if (cairo_pattern_status(pattern)) {
         cairo_pattern_destroy(pattern);
         cairo_pattern_destroy(maskPattern);
-        goto cleanup;
+        return;
     }
 
     cairo_matrix_init_translate(&maskMatrix, 0, maskHeight);
@@ -2850,7 +2862,7 @@ void CairoOutputDev::drawMaskedImage(GfxState *state, Object *ref, Stream *str, 
     if (cairo_pattern_status(maskPattern)) {
         cairo_pattern_destroy(maskPattern);
         cairo_pattern_destroy(pattern);
-        goto cleanup;
+        return;
     }
 
     if (!printing) {
@@ -2879,10 +2891,6 @@ void CairoOutputDev::drawMaskedImage(GfxState *state, Object *ref, Stream *str, 
 
     cairo_pattern_destroy(maskPattern);
     cairo_pattern_destroy(pattern);
-
-cleanup:
-    imgStr->close();
-    delete imgStr;
 }
 
 static inline void getMatteColorRgb(GfxImageColorMap *colorMap, const GfxColor *matteColorIn, GfxRGB *matteColorRgb)
@@ -2983,27 +2991,37 @@ void CairoOutputDev::drawSoftMaskedImage(GfxState *state, Object *ref, Stream *s
 		   ((GfxICCBasedColorSpace*)colorMap->getColorSpace())->getAlt()->getMode() == csDeviceRGB);
 #endif
 
-    /* TODO: Do we want to cache these? */
-    imgStr = new ImageStream(str, width, colorMap->getNumPixelComps(), colorMap->getBits());
-    imgStr->reset();
+    if (cairoSurfaceCache->contains(ref)) {
+        image = cairo_surface_reference(static_cast<CairoImage *>(cairoSurfaceCache->get(ref->getRef()).get())->getImage());
+    } else {
+        imgStr = new ImageStream(str, width, colorMap->getNumPixelComps(), colorMap->getBits());
+        imgStr->reset();
 
-    image = cairo_image_surface_create(CAIRO_FORMAT_RGB24, width, height);
-    if (cairo_surface_status(image)) {
-        goto cleanup;
-    }
+        image = cairo_image_surface_create(CAIRO_FORMAT_RGB24, width, height);
+        if (cairo_surface_status(image)) {
+            imgStr->close();
+            delete imgStr;
+            return;
+        }
 
-    buffer = cairo_image_surface_get_data(image);
-    row_stride = cairo_image_surface_get_stride(image);
-    for (y = 0; y < height; y++) {
-        dest = reinterpret_cast<unsigned int *>(buffer + y * row_stride);
-        pix = imgStr->getLine();
-        if (likely(pix != nullptr)) {
-            colorMap->getRGBLine(pix, dest, width);
-            if (matteColor != nullptr) {
-                maskDest = (unsigned char *)(maskBuffer + y * mask_row_stride);
-                applyMask(dest, width, matteColorRgb, maskDest);
+        buffer = cairo_image_surface_get_data(image);
+        row_stride = cairo_image_surface_get_stride(image);
+        for (y = 0; y < height; y++) {
+            dest = reinterpret_cast<unsigned int *>(buffer + y * row_stride);
+            pix = imgStr->getLine();
+            if (likely(pix != nullptr)) {
+                colorMap->getRGBLine(pix, dest, width);
+                if (matteColor != nullptr) {
+                    maskDest = (unsigned char *)(maskBuffer + y * mask_row_stride);
+                    applyMask(dest, width, matteColorRgb, maskDest);
+                }
             }
         }
+        std::unique_ptr<CairoImage> cachedImg = std::make_unique<CairoImage>(0., 0., 0., 0.);
+        cachedImg->setImage(image);
+        cairoSurfaceCache->set(ref, std::move(cachedImg), cairo_image_surface_get_stride(image) * height);
+        imgStr->close();
+        delete imgStr;
     }
 
     filter = getFilterForSurface(image, interpolate);
@@ -3017,7 +3035,7 @@ void CairoOutputDev::drawSoftMaskedImage(GfxState *state, Object *ref, Stream *s
     pattern = cairo_pattern_create_for_surface(image);
     cairo_surface_destroy(image);
     if (cairo_pattern_status(pattern)) {
-        goto cleanup;
+        return;
     }
 
     LOG(printf("drawSoftMaskedImage %dx%d\n", width, height));
@@ -3036,7 +3054,7 @@ void CairoOutputDev::drawSoftMaskedImage(GfxState *state, Object *ref, Stream *s
     if (cairo_pattern_status(pattern)) {
         cairo_pattern_destroy(pattern);
         cairo_pattern_destroy(maskPattern);
-        goto cleanup;
+        return;
     }
 
     cairo_matrix_init_translate(&maskMatrix, 0, maskHeight);
@@ -3045,7 +3063,7 @@ void CairoOutputDev::drawSoftMaskedImage(GfxState *state, Object *ref, Stream *s
     if (cairo_pattern_status(maskPattern)) {
         cairo_pattern_destroy(maskPattern);
         cairo_pattern_destroy(pattern);
-        goto cleanup;
+        return;
     }
 
     if (fill_opacity != 1.0) {
@@ -3086,10 +3104,6 @@ void CairoOutputDev::drawSoftMaskedImage(GfxState *state, Object *ref, Stream *s
 
     cairo_pattern_destroy(maskPattern);
     cairo_pattern_destroy(pattern);
-
-cleanup:
-    imgStr->close();
-    delete imgStr;
 }
 
 bool CairoOutputDev::getStreamData(Stream *str, char **buffer, int *length)
@@ -3316,6 +3330,9 @@ private:
 
 public:
     ~RescaleDrawImage() override;
+
+    static bool cachePossible(int widthA, int height, bool printing) { return !printing && widthA < MAX_CAIRO_IMAGE_SIZE && height < MAX_CAIRO_IMAGE_SIZE; }
+
     cairo_surface_t *getSourceImage(Stream *str, int widthA, int height, int scaledWidth, int scaledHeight, bool printing, GfxImageColorMap *colorMapA, const int *maskColorsA)
     {
         cairo_surface_t *image = nullptr;
@@ -3486,7 +3503,7 @@ RescaleDrawImage::~RescaleDrawImage() = default;
 
 void CairoOutputDev::drawImage(GfxState *state, Object *ref, Stream *str, int widthA, int heightA, GfxImageColorMap *colorMap, bool interpolate, const int *maskColors, bool inlineImg)
 {
-    cairo_surface_t *image;
+    cairo_surface_t *image = nullptr;
     cairo_pattern_t *pattern, *maskPattern;
     cairo_matrix_t matrix;
     int width, height;
@@ -3498,7 +3515,20 @@ void CairoOutputDev::drawImage(GfxState *state, Object *ref, Stream *str, int wi
 
     cairo_get_matrix(cairo, &matrix);
     getScaledSize(&matrix, widthA, heightA, &scaledWidth, &scaledHeight);
-    image = rescale.getSourceImage(str, widthA, heightA, scaledWidth, scaledHeight, printing, colorMap, maskColors);
+
+    if (rescale.cachePossible(widthA, heightA, printing) && cairoSurfaceCache->contains(ref)) {
+        image = cairo_surface_reference(static_cast<CairoImage *>(cairoSurfaceCache->get(ref->getRef()).get())->getImage());
+    }
+
+    if (!image) {
+        image = rescale.getSourceImage(str, widthA, heightA, scaledWidth, scaledHeight, printing, colorMap, maskColors);
+        if (rescale.cachePossible(widthA, heightA, printing)) {
+            std::unique_ptr<CairoImage> cachedImg = std::make_unique<CairoImage>(0., 0., 0., 0.);
+            cachedImg->setImage(image);
+            cairoSurfaceCache->set(ref, std::move(cachedImg), heightA * cairo_image_surface_get_stride(image));
+        }
+    }
+
     if (!image) {
         return;
     }

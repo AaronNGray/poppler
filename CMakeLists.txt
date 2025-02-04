@@ -421,6 +421,7 @@ set(poppler_SRCS
   poppler/AnnotStampImageHelper.cc
   poppler/Array.cc
   poppler/CachedFile.cc
+  poppler/CacheRef.cc
   poppler/Catalog.cc
   poppler/CharCodeToUnicode.cc
   poppler/CMap.cc
@@ -717,6 +718,7 @@ if(ENABLE_UNSTABLE_API_ABI_HEADERS)
     poppler/UnicodeDecompTables.h
     poppler/ViewerPreferences.h
     poppler/XRef.h
+    poppler/CacheRef.h
     poppler/CharTypes.h
     poppler/ErrorCodes.h
     poppler/NameToUnicodeTable.h

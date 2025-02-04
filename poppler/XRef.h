@@ -44,6 +44,7 @@
 #include "Object.h"
 #include "Stream.h"
 #include "PopplerCache.h"
+#include "CacheRef.h"
 
 class Dict;
 class Stream;
@@ -234,6 +235,9 @@ public:
     // to be thread safe during write where changes are not allowed
     void lock();
     void unlock();
+
+    // caches for image data contained in indirect objects
+    CacheRef cache;
 
 private:
     BaseStream *str; // input stream
