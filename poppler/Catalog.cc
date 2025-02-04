@@ -1356,11 +1356,8 @@ std::map<Ref, Ref> Catalog::insertPage(Page *page, int pageNum)
     return insertPage(page, pageNum, refMap);
 }
 
-std::map<Ref, Ref> Catalog::insertPage(Page *page, int pageNum, std::optional<std::map<Ref, Ref>> &refMap)
+std::pair<std::map<Ref, Ref>, Page *> Catalog::insertPageRef(Ref &pageRef, PDFDoc *pageDoc, int pageNum, std::optional<std::map<Ref, Ref>> &refMap)
 {
-    Ref pageRef = page->getRef();
-    auto pageDoc = page->getDoc();
-
     if (pageDoc->getPDFMajorVersion() > catalogPdfMajorVersion) {
         catalogPdfMinorVersion = pageDoc->getPDFMinorVersion();
         catalogPdfMajorVersion = pageDoc->getPDFMajorVersion();
@@ -1413,8 +1410,8 @@ std::map<Ref, Ref> Catalog::insertPage(Page *page, int pageNum, std::optional<st
     Object newPageObj = xref->fetch(newPageRef);
 
     // FIXME: it is unclear what should be put for the page attrs here. nullptr for now.
-    PageAttrs *attrs = new PageAttrs(nullptr, newPageObj.getDict());
-    auto p = std::make_unique<Page>(doc, pageNum, std::move(newPageObj), newPageRef, attrs, form);
+    auto attrs = std::make_unique<PageAttrs>(nullptr, newPageObj.getDict());
+    auto p = std::make_unique<Page>(doc, pageNum, std::move(newPageObj), newPageRef, std::move(attrs), form);
     if (!p->isOk()) {
         error(errSyntaxError, -1, "Failed to create page (page {0:d})", pageNum);
     }
@@ -1431,7 +1428,22 @@ std::map<Ref, Ref> Catalog::insertPage(Page *page, int pageNum, std::optional<st
         pageLabelInfo = nullptr;
     }
 
-    return addResult.second;
+    return std::pair(addResult.second, p.get());
+}
+
+std::map<Ref, Ref> Catalog::insertPage(Page *page, int pageNum, std::optional<std::map<Ref, Ref>> &refMap)
+{
+    Ref pageRef = page->getRef();
+    return insertPageRef(pageRef, page->getDoc(), pageNum, refMap).first;
+}
+
+Page *Catalog::insertBlankPage(int num)
+{
+    Object pageDict = Object(new Dict(xref));
+    pageDict.dictSet("name", std::move(Object(objName, "Page")));
+    Ref r = xref->addIndirectObject(pageDict);
+    std::optional<std::map<Ref, Ref>> refMap = {};
+    return insertPageRef(r, doc, num, refMap).second;
 }
 
 void Catalog::removePage(Page *page)

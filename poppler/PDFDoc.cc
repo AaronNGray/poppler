@@ -663,14 +663,8 @@ Linearization *PDFDoc::getLinearization()
 
 void PDFDoc::resetLinearization()
 {
-    if (pageCache) {
-        for (int i = 0; i < getNumPages(); i++) {
-            if (pageCache[i]) {
-                delete pageCache[i];
-            }
-        }
-        gfree(pageCache);
-        pageCache = nullptr;
+    if (!pageCache.empty()) {
+        pageCache.clear();
     }
     linearization = new Linearization(nullptr);
     linearizationState = 0;
@@ -2295,6 +2289,14 @@ std::map<Ref, Ref> PDFDoc::insertPage(Page *page, int num, std::optional<std::ma
         resetLinearization();
     }
     return getCatalog()->insertPage(page, num, refMap);
+}
+
+Page *PDFDoc::insertBlankPage(int num)
+{
+    if (isLinearized()) {
+        resetLinearization();
+    }
+    return getCatalog()->insertBlankPage(num);
 }
 
 void PDFDoc::removePage(Page *page)

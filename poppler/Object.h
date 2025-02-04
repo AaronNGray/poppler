@@ -559,7 +559,7 @@ public:
     bool getBoolWithDefaultValue(bool defaultValue) const { return (type == objBool) ? booln : defaultValue; }
 
     template<typename T>
-    T switchObject(std::function<T(Array *)> fArray, std::function<T(Dict *)> fDict, std::function<T(Stream *)> fStream, std::function<T(Ref)> fRef, T def)
+    T switchObject(const std::function<T(Array *)> &fArray, const std::function<T(Dict *)> &fDict, const std::function<T(Stream *)> &fStream, const std::function<T(Ref)> &fRef, T def)
     {
         T v;
         switch (getType()) {

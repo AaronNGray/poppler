@@ -329,6 +329,8 @@ void poppler_document_remove_page(PopplerDocument *document, int index);
 POPPLER_PUBLIC
 void poppler_document_insert_page(PopplerDocument *document, PopplerPage *page, int index);
 POPPLER_PUBLIC
+void poppler_document_insert_blank_page(PopplerDocument *document, int index);
+POPPLER_PUBLIC
 gchar *poppler_document_get_pdf_version_string(PopplerDocument *document);
 POPPLER_PUBLIC
 void poppler_document_get_pdf_version(PopplerDocument *document, guint *major_version, guint *minor_version);

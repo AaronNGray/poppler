@@ -356,6 +356,7 @@ public:
     std::map<Ref, Ref> insertPage(Page *page, int num);
     std::map<Ref, Ref> insertPage(Page *page, int num, std::optional<std::map<Ref, Ref>> &refMap);
     void removePage(Page *page);
+    Page *insertBlankPage(int num);
 
 private:
     // insert referenced objects in XRef

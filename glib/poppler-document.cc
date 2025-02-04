@@ -831,6 +831,18 @@ void poppler_document_insert_page(PopplerDocument *document, PopplerPage *page, 
 }
 
 /**
+ * poppler_document_insert_blank_page:
+ * @document: A #PopplerDocument
+ * @index: where the page is going to be inserted (@page will be page number
+ * @index)
+ *
+ **/
+void poppler_document_insert_blank_page(PopplerDocument *document, int index)
+{
+    document->doc->insertBlankPage(index + 1);
+}
+
+/**
  * poppler_document_get_n_attachments:
  * @document: A #PopplerDocument
  *
