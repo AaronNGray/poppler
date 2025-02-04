@@ -362,11 +362,6 @@ private:
     void setOverprintMask(GfxColorSpace *colorSpace, bool overprintFlag, int overprintMode, const GfxColor *singleColor, bool grayIndexed = false);
     SplashPath convertPath(GfxState *state, const GfxPath *path, bool dropEmptySubpaths);
     void drawType3Glyph(GfxState *state, T3FontCache *t3Font, T3FontCacheTag *tag, unsigned char *data);
-#ifdef USE_CMS
-    bool useIccImageSrc(void *data);
-    static void iccTransform(void *data, SplashBitmap *bitmap);
-    static bool iccImageSrc(void *data, SplashColorPtr colorLine, unsigned char *alphaLine);
-#endif
     static bool imageMaskSrc(void *data, SplashColorPtr line);
     static bool imageSrc(void *data, SplashColorPtr colorLine, unsigned char *alphaLine);
     static bool alphaImageSrc(void *data, SplashColorPtr line, unsigned char *alphaLine);

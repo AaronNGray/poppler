@@ -3509,7 +3509,7 @@ void Splash::blitMask(SplashBitmap *src, int xDest, int yDest, SplashClipResult 
     }
 }
 
-SplashError Splash::drawImage(SplashImageSource src, SplashICCTransform tf, void *srcData, SplashColorMode srcMode, bool srcAlpha, int w, int h, SplashCoord *mat, bool interpolate, bool tilingPattern)
+SplashError Splash::drawImage(SplashImageSource src, void *srcData, SplashColorMode srcMode, bool srcAlpha, int w, int h, SplashCoord *mat, bool interpolate, bool tilingPattern)
 {
     bool ok;
     SplashBitmap *scaledImg;
@@ -3593,9 +3593,6 @@ SplashError Splash::drawImage(SplashImageSource src, SplashICCTransform tf, void
             if (scaledImg == nullptr) {
                 return splashErrBadArg;
             }
-            if (tf != nullptr) {
-                (*tf)(srcData, scaledImg);
-            }
             blitImage(scaledImg, srcAlpha, x0, y0, clipRes);
             delete scaledImg;
         }
@@ -3633,9 +3630,6 @@ SplashError Splash::drawImage(SplashImageSource src, SplashICCTransform tf, void
             if (scaledImg == nullptr) {
                 return splashErrBadArg;
             }
-            if (tf != nullptr) {
-                (*tf)(srcData, scaledImg);
-            }
             vertFlipImage(scaledImg, scaledWidth, scaledHeight, nComps);
             blitImage(scaledImg, srcAlpha, x0, y0, clipRes);
             delete scaledImg;
@@ -3643,14 +3637,13 @@ SplashError Splash::drawImage(SplashImageSource src, SplashICCTransform tf, void
 
         // all other cases
     } else {
-        return arbitraryTransformImage(src, tf, srcData, srcMode, nComps, srcAlpha, w, h, mat, interpolate, tilingPattern);
+        return arbitraryTransformImage(src, srcData, srcMode, nComps, srcAlpha, w, h, mat, interpolate, tilingPattern);
     }
 
     return splashOk;
 }
 
-SplashError Splash::arbitraryTransformImage(SplashImageSource src, SplashICCTransform tf, void *srcData, SplashColorMode srcMode, int nComps, bool srcAlpha, int srcWidth, int srcHeight, SplashCoord *mat, bool interpolate,
-                                            bool tilingPattern)
+SplashError Splash::arbitraryTransformImage(SplashImageSource src, void *srcData, SplashColorMode srcMode, int nComps, bool srcAlpha, int srcWidth, int srcHeight, SplashCoord *mat, bool interpolate, bool tilingPattern)
 {
     SplashBitmap *scaledImg;
     SplashClipResult clipRes, clipRes2;
@@ -3800,9 +3793,6 @@ SplashError Splash::arbitraryTransformImage(SplashImageSource src, SplashICCTran
         return splashErrBadArg;
     }
 
-    if (tf != nullptr) {
-        (*tf)(srcData, scaledImg);
-    }
     // construct the three sections
     i = 0;
     if (vy[1] < vy[i]) {

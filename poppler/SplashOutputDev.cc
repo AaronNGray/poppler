@@ -2731,44 +2731,6 @@ struct SplashOutImageData
     SplashColor matteColor;
 };
 
-#ifdef USE_CMS
-bool SplashOutputDev::useIccImageSrc(void *data)
-{
-    SplashOutImageData *imgData = (SplashOutImageData *)data;
-
-    if (!imgData->lookup && imgData->colorMap->getColorSpace()->getMode() == csICCBased && imgData->colorMap->getBits() != 1) {
-        GfxICCBasedColorSpace *colorSpace = (GfxICCBasedColorSpace *)imgData->colorMap->getColorSpace();
-        switch (imgData->colorMode) {
-        case splashModeMono1:
-        case splashModeMono8:
-            if (colorSpace->getAlt() != nullptr && colorSpace->getAlt()->getMode() == csDeviceGray) {
-                return true;
-            }
-            break;
-        case splashModeXBGR8:
-        case splashModeRGB8:
-        case splashModeBGR8:
-            if (colorSpace->getAlt() != nullptr && colorSpace->getAlt()->getMode() == csDeviceRGB) {
-                return true;
-            }
-            break;
-        case splashModeCMYK8:
-            if (colorSpace->getAlt() != nullptr && colorSpace->getAlt()->getMode() == csDeviceCMYK) {
-                return true;
-            }
-            break;
-        case splashModeDeviceN8:
-            if (colorSpace->getAlt() != nullptr && colorSpace->getAlt()->getMode() == csDeviceN) {
-                return true;
-            }
-            break;
-        }
-    }
-
-    return false;
-}
-#endif
-
 // Clip x to lie in [0, 255].
 static inline unsigned char clip255(int x)
 {
@@ -2926,103 +2888,6 @@ bool SplashOutputDev::imageSrc(void *data, SplashColorPtr colorLine, unsigned ch
     ++imgData->y;
     return true;
 }
-
-#ifdef USE_CMS
-bool SplashOutputDev::iccImageSrc(void *data, SplashColorPtr colorLine, unsigned char * /*alphaLine*/)
-{
-    SplashOutImageData *imgData = (SplashOutImageData *)data;
-    unsigned char *p;
-    int nComps;
-
-    if (imgData->y == imgData->height) {
-        return false;
-    }
-    if (!(p = imgData->imgStr->getLine())) {
-        int destComps = 1;
-        if (imgData->colorMode == splashModeRGB8 || imgData->colorMode == splashModeBGR8) {
-            destComps = 3;
-        } else if (imgData->colorMode == splashModeXBGR8) {
-            destComps = 4;
-        } else if (imgData->colorMode == splashModeCMYK8) {
-            destComps = 4;
-        } else if (imgData->colorMode == splashModeDeviceN8) {
-            destComps = SPOT_NCOMPS + 4;
-        }
-        memset(colorLine, 0, imgData->width * destComps);
-        return false;
-    }
-
-    if (imgData->colorMode == splashModeXBGR8) {
-        SplashColorPtr q;
-        int x;
-        for (x = 0, q = colorLine; x < imgData->width; ++x) {
-            *q++ = *p++;
-            *q++ = *p++;
-            *q++ = *p++;
-            *q++ = 255;
-        }
-    } else {
-        nComps = imgData->colorMap->getNumPixelComps();
-        memcpy(colorLine, p, imgData->width * nComps);
-    }
-
-    ++imgData->y;
-    return true;
-}
-
-void SplashOutputDev::iccTransform(void *data, SplashBitmap *bitmap)
-{
-    SplashOutImageData *imgData = (SplashOutImageData *)data;
-    int nComps = imgData->colorMap->getNumPixelComps();
-
-    unsigned char *colorLine = (unsigned char *)gmalloc(nComps * bitmap->getWidth());
-    unsigned char *rgbxLine = (imgData->colorMode == splashModeXBGR8) ? (unsigned char *)gmalloc(3 * bitmap->getWidth()) : nullptr;
-    for (int i = 0; i < bitmap->getHeight(); i++) {
-        unsigned char *p = bitmap->getDataPtr() + i * bitmap->getRowSize();
-        switch (imgData->colorMode) {
-        case splashModeMono1:
-        case splashModeMono8:
-            imgData->colorMap->getGrayLine(p, colorLine, bitmap->getWidth());
-            memcpy(p, colorLine, nComps * bitmap->getWidth());
-            break;
-        case splashModeRGB8:
-        case splashModeBGR8:
-            imgData->colorMap->getRGBLine(p, colorLine, bitmap->getWidth());
-            memcpy(p, colorLine, nComps * bitmap->getWidth());
-            break;
-        case splashModeCMYK8:
-            imgData->colorMap->getCMYKLine(p, colorLine, bitmap->getWidth());
-            memcpy(p, colorLine, nComps * bitmap->getWidth());
-            break;
-        case splashModeDeviceN8:
-            imgData->colorMap->getDeviceNLine(p, colorLine, bitmap->getWidth());
-            memcpy(p, colorLine, nComps * bitmap->getWidth());
-            break;
-        case splashModeXBGR8:
-            unsigned char *q;
-            unsigned char *b = p;
-            int x;
-            for (x = 0, q = rgbxLine; x < bitmap->getWidth(); ++x, b += 4) {
-                *q++ = b[2];
-                *q++ = b[1];
-                *q++ = b[0];
-            }
-            imgData->colorMap->getRGBLine(rgbxLine, colorLine, bitmap->getWidth());
-            b = p;
-            for (x = 0, q = colorLine; x < bitmap->getWidth(); ++x, b += 4) {
-                b[2] = *q++;
-                b[1] = *q++;
-                b[0] = *q++;
-            }
-            break;
-        }
-    }
-    gfree(colorLine);
-    if (rgbxLine != nullptr) {
-        gfree(rgbxLine);
-    }
-}
-#endif
 
 bool SplashOutputDev::alphaImageSrc(void *data, SplashColorPtr colorLine, unsigned char *alphaLine)
 {
@@ -3227,7 +3092,6 @@ void SplashOutputDev::drawImage(GfxState *state, Object *ref, Stream *str, int w
     SplashOutImageData imgData;
     SplashColorMode srcMode;
     SplashImageSource src;
-    SplashICCTransform tf;
     GfxGray gray;
     GfxRGB rgb;
     GfxCMYK cmyk;
@@ -3348,14 +3212,8 @@ void SplashOutputDev::drawImage(GfxState *state, Object *ref, Stream *str, int w
     } else {
         srcMode = colorMode;
     }
-#ifdef USE_CMS
-    src = maskColors ? &alphaImageSrc : useIccImageSrc(&imgData) ? &iccImageSrc : &imageSrc;
-    tf = maskColors == nullptr && useIccImageSrc(&imgData) ? &iccTransform : nullptr;
-#else
     src = maskColors ? &alphaImageSrc : &imageSrc;
-    tf = nullptr;
-#endif
-    splash->drawImage(src, tf, &imgData, srcMode, maskColors ? true : false, width, height, mat, interpolate);
+    splash->drawImage(src, &imgData, srcMode, maskColors ? true : false, width, height, mat, interpolate);
     if (inlineImg) {
         while (imgData.y < height) {
             imgData.imgStr->getLine();
@@ -3636,7 +3494,7 @@ void SplashOutputDev::drawMaskedImage(GfxState *state, Object *ref, Stream *str,
         } else {
             srcMode = colorMode;
         }
-        splash->drawImage(&maskedImageSrc, nullptr, &imgData, srcMode, true, width, height, mat, interpolate);
+        splash->drawImage(&maskedImageSrc, &imgData, srcMode, true, width, height, mat, interpolate);
         delete maskBitmap;
         gfree(imgData.lookup);
         delete imgData.imgStr;
@@ -3713,7 +3571,7 @@ void SplashOutputDev::drawSoftMaskedImage(GfxState *state, Object * /* ref */, S
     maskSplash = new Splash(maskBitmap, vectorAntialias);
     maskColor[0] = 0;
     maskSplash->clear(maskColor);
-    maskSplash->drawImage(&imageSrc, nullptr, &imgMaskData, splashModeMono8, false, maskWidth, maskHeight, mat, maskInterpolate);
+    maskSplash->drawImage(&imageSrc, &imgMaskData, splashModeMono8, false, maskWidth, maskHeight, mat, maskInterpolate);
     delete imgMaskData.imgStr;
     if (maskColorMap->getMatteColor() == nullptr) {
         maskStr->close();
@@ -3815,7 +3673,7 @@ void SplashOutputDev::drawSoftMaskedImage(GfxState *state, Object * /* ref */, S
     } else {
         srcMode = colorMode;
     }
-    splash->drawImage(&imageSrc, nullptr, &imgData, srcMode, false, width, height, mat, interpolate);
+    splash->drawImage(&imageSrc, &imgData, srcMode, false, width, height, mat, interpolate);
     splash->setSoftMask(nullptr);
     gfree(imgData.lookup);
     delete imgData.maskStr;
@@ -4423,7 +4281,7 @@ bool SplashOutputDev::tilingPatternFill(GfxState *state, Gfx *gfxA, Catalog *cat
         }
         retValue = true;
     } else {
-        retValue = splash->drawImage(&tilingBitmapSrc, nullptr, &imgData, colorMode, true, result_width, result_height, matc, false, true) == splashOk;
+        retValue = splash->drawImage(&tilingBitmapSrc, &imgData, colorMode, true, result_width, result_height, matc, false, true) == splashOk;
     }
     delete tBitmap;
     if (!retValue) {
