@@ -1274,8 +1274,8 @@ public:
     [[nodiscard]] bool reset() override;
     int getChar() override;
     int lookChar() override;
-    GooString *getPSFilter(int psLevel, const char *indent) override { return nullptr; }
-    bool isBinary(bool last = true) const override;
+    GooString *getPSFilter(int /*psLevel*/, const char * /*indent*/) override { return nullptr; }
+    bool isBinary(bool /*last = true*/) const override;
 
     int lookChar(int idx);
 
@@ -1407,8 +1407,8 @@ public:
     [[nodiscard]] bool reset() override;
     int getChar() override;
     int lookChar() override;
-    GooString *getPSFilter(int psLevel, const char *indent) override { return nullptr; }
-    bool isBinary(bool last = true) const override { return true; }
+    GooString *getPSFilter(int /*psLevel*/, const char * /*indent*/) override { return nullptr; }
+    bool isBinary(bool /*last = true*/) const override { return true; }
     bool isEncoder() const override { return true; }
 
 private:
