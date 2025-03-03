@@ -2914,30 +2914,434 @@ static inline void applyMask(unsigned int *imagePointer, int length, GfxRGB matt
     }
 }
 
+class RescaleDrawImage : public CairoRescaleBox
+{
+private:
+    ImageStream *imgStr;
+    GfxRGB *lookup;
+    int width;
+    GfxImageColorMap *colorMap;
+    const int *maskColors;
+    int current_row;
+    bool imageError;
+    bool fromRGBA;
+    bool softMask; // the image is a soft mask (SMask)
+    const GfxRGB *matteColorRgb; // When need to add Matte color
+    cairo_surface_t *SMaskImage; // from a SMask image
+    cairo_format_t imageFormat; // the format of dest image (rescaled image)
+
+public:
+    ~RescaleDrawImage() override;
+    cairo_surface_t *getSourceImage(Stream *str, int widthA, int height, int scaledWidth, int scaledHeight, bool printing, GfxImageColorMap *colorMapA, const int *maskColorsA, unsigned short int startRow = 0, unsigned short int endRow = 0,
+                                    unsigned short int startColumn = 0, unsigned short int endColumn = 0, bool *neededDownscale = nullptr)
+    {
+        return getSourceImage(str, widthA, height, scaledWidth, scaledHeight, printing, startColumn, endColumn, startRow, endRow, colorMapA, maskColorsA, false, nullptr, nullptr, neededDownscale);
+    }
+
+    cairo_surface_t *getSourceImageSMask(Stream *str, int widthA, int height, int scaledWidth, int scaledHeight, bool printing, GfxImageColorMap *colorMapA, unsigned short int startRow = 0, unsigned short int endRow = 0,
+                                         unsigned short int startColumn = 0, unsigned short int endColumn = 0, bool *neededDownscale = nullptr)
+    {
+        return getSourceImage(str, widthA, height, scaledWidth, scaledHeight, printing, startColumn, endColumn, startRow, endRow, colorMapA, nullptr, true, nullptr, nullptr, neededDownscale);
+    }
+
+    cairo_surface_t *getSourceImageWithMatte(Stream *str, int widthA, int height, int scaledWidth, int scaledHeight, bool printing, GfxImageColorMap *colorMapA, const GfxRGB *matteColourRgb, cairo_surface_t *SMaskImageA,
+                                             unsigned short int startRow = 0, unsigned short int endRow = 0, unsigned short int startColumn = 0, unsigned short int endColumn = 0, bool *neededDownscale = nullptr)
+    {
+        return getSourceImage(str, widthA, height, scaledWidth, scaledHeight, printing, startColumn, endColumn, startRow, endRow, colorMapA, nullptr, false, matteColourRgb, SMaskImageA, neededDownscale);
+    }
+
+private:
+    // startColumn/endColumn and startRow/endRow parameters are:
+    //   - Expected to be 1-indexed (first row is 1 not 0), and passing zero means "use all width" or "used all height" respectively
+    //   - endColumn and endRow are both included in their respective range.
+    cairo_surface_t *getSourceImage(Stream *str, int widthA, int height, int scaledWidth, int scaledHeight, bool printing, unsigned short int startColumn, unsigned short int endColumn, unsigned short int startRow, unsigned short int endRow,
+                                    GfxImageColorMap *colorMapA, const int *maskColorsA, bool softMaskA, const GfxRGB *matteColorRgbA, cairo_surface_t *SMaskImageA, bool *neededDownscale)
+    {
+        cairo_surface_t *image = nullptr;
+        int i;
+
+        lookup = nullptr;
+        colorMap = colorMapA;
+        maskColors = maskColorsA;
+        softMask = softMaskA;
+        matteColorRgb = matteColorRgbA;
+        SMaskImage = SMaskImageA;
+        width = widthA;
+        current_row = -1;
+        imageError = false;
+        fromRGBA = colorMap->getColorSpace()->getMode() == csDeviceRGBA;
+        if (maskColors || fromRGBA) {
+            imageFormat = CAIRO_FORMAT_ARGB32;
+        } else if (softMask) {
+            imageFormat = CAIRO_FORMAT_A8;
+        } else {
+            imageFormat = CAIRO_FORMAT_RGB24;
+        }
+
+        // Do some parameter validation wrt different caller variants
+        if (softMask) {
+            assert(!maskColors);
+            assert(!matteColorRgb);
+            assert(!SMaskImage);
+        } else if (matteColorRgb) {
+            assert(!maskColors);
+            assert(SMaskImage);
+            if (cairo_surface_status(SMaskImage)) {
+                return image;
+            }
+        }
+
+        /* TODO: Do we want to cache these? */
+        imgStr = new ImageStream(str, width, colorMap->getNumPixelComps(), colorMap->getBits());
+        if (!imgStr->reset()) {
+            delete imgStr;
+            return image;
+        }
+
+#if 0
+    /* ICCBased color space doesn't do any color correction
+     * so check its underlying color space as well */
+    int is_identity_transform;
+    is_identity_transform = colorMap->getColorSpace()->getMode() == csDeviceRGB ||
+      (colorMap->getColorSpace()->getMode() == csICCBased &&
+       ((GfxICCBasedColorSpace*)colorMap->getColorSpace())->getAlt()->getMode() == csDeviceRGB);
+#endif
+
+        // special case for one-channel (monochrome/gray/separation) images:
+        // build a lookup table here
+        if (!softMask && colorMap->getNumPixelComps() == 1) {
+            int n;
+            unsigned char pix;
+
+            n = 1 << colorMap->getBits();
+            lookup = (GfxRGB *)gmallocn(n, sizeof(GfxRGB));
+            for (i = 0; i < n; ++i) {
+                pix = (unsigned char)i;
+
+                colorMap->getRGB(&pix, &lookup[i]);
+            }
+        }
+
+        bool needsCustomDownscaling = (width > MAX_CAIRO_IMAGE_SIZE || height > MAX_CAIRO_IMAGE_SIZE);
+
+        if (printing) {
+            if (width > MAX_PRINT_IMAGE_SIZE || height > MAX_PRINT_IMAGE_SIZE) {
+                if (width > height) {
+                    scaledWidth = MAX_PRINT_IMAGE_SIZE;
+                    scaledHeight = MAX_PRINT_IMAGE_SIZE * (double)height / width;
+                } else {
+                    scaledHeight = MAX_PRINT_IMAGE_SIZE;
+                    scaledWidth = MAX_PRINT_IMAGE_SIZE * (double)width / height;
+                }
+                needsCustomDownscaling = true;
+
+                if (scaledWidth == 0) {
+                    scaledWidth = 1;
+                }
+                if (scaledHeight == 0) {
+                    scaledHeight = 1;
+                }
+            }
+        }
+
+        if (!needsCustomDownscaling || scaledWidth >= width || scaledHeight >= height) {
+            // No downscaling. Create cairo image containing the source image data.
+            unsigned char *buffer;
+            ptrdiff_t stride;
+            int destHeight = height;
+            int destWidth = width;
+            // 0-indexed column range to pass to getRowA8()
+            unsigned short int startColumn0 = 0;
+            unsigned short int endColumn0 = width - 1; // initialize to full width
+            int startY = 0;
+            int endY = height;
+            bool useGetRowColumnFix = false;
+            uint32_t *full_row = nullptr;
+            if (neededDownscale) {
+                *neededDownscale = false;
+            }
+            if (startRow && startRow <= endRow) {
+                destHeight = (endRow - startRow) + 1;
+                startY = startRow - 1;
+                endY = endRow;
+            }
+            if (startColumn && startColumn <= endColumn) {
+                destWidth = (endColumn - startColumn) + 1;
+                startColumn0 = startColumn - 1;
+                endColumn0 = endColumn - 1;
+                if (!softMask) {
+                    // Fix for the lack of column range parameters in getRow() for RGB images, fix consists in
+                    // grabbing the full row with getRow() and then copy to dest image the required column range
+                    useGetRowColumnFix = true;
+                    full_row = (uint32_t *)gmallocn(width, sizeof(uint32_t));
+                }
+            }
+            image = cairo_image_surface_create(imageFormat, destWidth, destHeight);
+            if (cairo_surface_status(image)) {
+                gfree(full_row);
+                goto cleanup;
+            }
+
+            buffer = cairo_image_surface_get_data(image);
+            stride = cairo_image_surface_get_stride(image);
+            for (int y = startY; y < endY; y++) {
+                if (softMask) {
+                    uint8_t *dest = (buffer + ((y - startY) * stride));
+                    getRowA8(y, dest, startColumn0, endColumn0);
+                } else {
+                    uint32_t *dest = reinterpret_cast<uint32_t *>(buffer + ((y - startY) * stride));
+                    if (useGetRowColumnFix) {
+                        getRow(y, full_row);
+                        memcpy(dest, full_row + startColumn0, destWidth);
+                    } else {
+                        getRow(y, dest);
+                    }
+                }
+            }
+            gfree(full_row);
+        } else {
+            // Downscaling required. Create cairo image the size of the
+            // rescaled image and downscale the source image data into
+            // the cairo image. downScaleImage() will call getRow() to read
+            // source image data from the image stream. This avoids having
+            // to create an image the size of the source image which may
+            // exceed cairo's 32767x32767 image size limit (and also saves a
+            // lot of memory).
+
+            int destWidth = scaledWidth;
+            int destHeight = scaledHeight;
+
+            if (neededDownscale) {
+                *neededDownscale = true;
+            }
+
+            unsigned short int startRowScaled, startColumnScaled, endColumnScaled, endRowScaled;
+            unsigned short int startRowScaled0 = 0;
+            unsigned short int startColumnScaled0 = 0;
+            if (startRow && startRow <= endRow) {
+                // startRow is according to height var, so we need to adapt it for scaledHeight
+                startRowScaled = (unsigned short int)(scaledHeight * startRow / height);
+                if (startRowScaled == 0) {
+                    startRowScaled = 1;
+                }
+                endRowScaled = (unsigned short int)(scaledHeight * endRow / height);
+                if (endRowScaled == 0) {
+                    endRowScaled = 1;
+                }
+                destHeight = (endRowScaled - startRowScaled) + 1;
+                startRowScaled0 = startRowScaled - 1;
+            }
+
+            if (startColumn && startColumn < endColumn) {
+                startColumnScaled = (unsigned short int)((scaledWidth * startColumn) / width);
+                if (startColumnScaled == 0) {
+                    startColumnScaled = 1;
+                }
+                endColumnScaled = (unsigned short int)((scaledWidth * endColumn) / width);
+                if (endColumnScaled == 0) {
+                    endColumnScaled = 1;
+                }
+                destWidth = (endColumnScaled - startColumnScaled) + 1;
+                startColumnScaled0 = startColumnScaled - 1;
+            }
+
+            if (softMask) {
+                image = downScaleImageA8(width, height, destWidth, destHeight, startColumn, endColumn, startRow, endRow);
+                if (!image) {
+                    image = cairo_image_surface_create(imageFormat, destWidth, destHeight);
+                }
+                goto cleanup;
+            } else {
+                image = cairo_image_surface_create(imageFormat, destWidth, destHeight);
+                if (cairo_surface_status(image)) {
+                    goto cleanup;
+                }
+                // downScaleImage() requires start_column and start_row to be provided 0-indexed and according to destination dimensions
+                downScaleImage(width, height, scaledWidth, scaledHeight, startColumnScaled0, startRowScaled0, destWidth, destHeight, image);
+            }
+        }
+        cairo_surface_mark_dirty(image);
+
+    cleanup:
+        gfree(lookup);
+        imgStr->close();
+        delete imgStr;
+        return image;
+    }
+
+    void getRow(int row_num, uint32_t *row_data) override
+    {
+        unsigned char *pix;
+
+        if (row_num <= current_row) {
+            return;
+        }
+
+        while (current_row < row_num) {
+            pix = imgStr->getLine();
+            current_row++;
+        }
+
+        if (unlikely(pix == nullptr)) {
+            memset(row_data, 0, width * 4);
+            if (!imageError) {
+                error(errInternal, -1, "Bad image stream");
+                imageError = true;
+            }
+        } else if (lookup) {
+            unsigned char *p = pix;
+            GfxRGB rgb;
+
+            for (int i = 0; i < width; i++) {
+                rgb = lookup[*p];
+                row_data[i] = ((int)colToByte(rgb.r) << 16) | ((int)colToByte(rgb.g) << 8) | ((int)colToByte(rgb.b) << 0);
+                p++;
+            }
+        } else if (fromRGBA) {
+            // Case of transparent JPX images, they contain RGBA data · Issue #1486
+            GfxDeviceRGBAColorSpace *rgbaCS = dynamic_cast<GfxDeviceRGBAColorSpace *>(colorMap->getColorSpace());
+            if (rgbaCS) {
+                rgbaCS->getARGBPremultipliedLine(pix, row_data, width);
+            } else {
+                error(errSyntaxWarning, -1, "CairoOutputDev: Unexpected fallback from RGBA to RGB");
+                colorMap->getRGBLine(pix, row_data, width);
+            }
+        } else {
+            colorMap->getRGBLine(pix, row_data, width);
+        }
+
+        if (maskColors) {
+            for (int x = 0; x < width; x++) {
+                bool is_opaque = false;
+                for (int i = 0; i < colorMap->getNumPixelComps(); ++i) {
+                    if (pix[i] < maskColors[2 * i] || pix[i] > maskColors[2 * i + 1]) {
+                        is_opaque = true;
+                        break;
+                    }
+                }
+                if (is_opaque) {
+                    *row_data |= 0xff000000;
+                } else {
+                    *row_data = 0;
+                }
+                row_data++;
+                pix += colorMap->getNumPixelComps();
+            }
+        }
+    }
+
+    // startCol and endCol should be 0-indexed and endCol is included
+    void getRowA8(int row_num, uint8_t *row_data, unsigned short int startCol, unsigned short int endCol) override
+    {
+        unsigned char *pix;
+
+        if (row_num <= current_row) {
+            return;
+        }
+
+        while (current_row < row_num) {
+            pix = (unsigned char *)imgStr->getLine();
+            current_row++;
+        }
+
+        if (unlikely(pix == nullptr)) {
+            memset(row_data, 0, (endCol - startCol) + 1);
+            if (!imageError) {
+                error(errInternal, -1, "Bad image stream");
+                imageError = true;
+            }
+        }
+        colorMap->getGrayLine(pix + startCol, (unsigned char *)row_data, (endCol - startCol) + 1);
+    }
+};
+
+RescaleDrawImage::~RescaleDrawImage() = default;
+
 // XXX: is this affect by AIS(alpha is shape)?
 void CairoOutputDev::drawSoftMaskedImage(GfxState *state, Object *ref, Stream *str, int width, int height, GfxImageColorMap *colorMap, bool interpolate, Stream *maskStr, int maskWidth, int maskHeight, GfxImageColorMap *maskColorMap,
                                          bool maskInterpolate)
 {
-    ptrdiff_t row_stride, mask_row_stride;
-    unsigned char *maskBuffer, *buffer;
-    unsigned char *maskDest;
-    unsigned int *dest;
     cairo_surface_t *maskImage, *image;
     cairo_pattern_t *maskPattern, *pattern;
-    cairo_matrix_t maskMatrix, matrix;
-    unsigned char *pix;
-    int y;
+    cairo_matrix_t maskMatrix, matrix, cairoMatrix;
     cairo_filter_t filter;
     cairo_filter_t maskFilter;
     GfxRGB matteColorRgb;
+    int scaledWidth, scaledHeight;
+    unsigned short int startRow, endRow;
+    unsigned short int startCol, endCol, startColScaled, endColScaled, numCols, scaledNumCols;
+    bool scaledYbiggerThanClipboxHeight, translateYwithinImage;
+    bool usedDownscaling, usedDownscalingMask;
+    RescaleDrawImage rescale;
+
+    cairo_get_matrix(cairo, &cairoMatrix);
+    getScaledSize(&cairoMatrix, width, height, &scaledWidth, &scaledHeight);
+
+    startRow = endRow = 0;
+    startCol = endCol = 0;
+    numCols = scaledNumCols = 0;
+    const double *cm = state->getCTM();
+    const double translateY = cm[5];
+    const double scaleY = cm[3];
+    double xMin, yMin, xMax, yMax;
+    state->getClipBBox(&xMin, &yMin, &xMax, &yMax);
+    const unsigned short int clipBoxHeight = (unsigned short int)(yMax - yMin);
+    // Rule of three to transform clipBoxHeight from being 'scaleY' based to being 'height' based
+    const unsigned short int clipBoxHeightScaled = (unsigned short int)(clipBoxHeight * height / std::abs(scaleY));
+    scaledYbiggerThanClipboxHeight = (unsigned int)std::abs(scaleY) > clipBoxHeight;
+    if (scaleY >= 0) {
+        if (translateY >= 0) {
+            translateYwithinImage = translateY <= clipBoxHeight + yMin;
+        } else {
+            translateYwithinImage = (unsigned int)std::abs(translateY - yMin - clipBoxHeight) <= (unsigned int)(scaleY);
+        }
+    } else {
+        if (translateY >= 0) {
+            translateYwithinImage = (unsigned int)translateY <= clipBoxHeight + (unsigned int)(std::abs(scaleY) + yMin);
+        } else {
+            translateYwithinImage = false;
+        }
+    }
+    unsigned short int offset, offsetHeight, offsetScaledHeight, offsetMaskHeight;
+    offset = offsetHeight = offsetScaledHeight = offsetMaskHeight = 0;
+    bool usesVerticalOffset = false;
+    if (scaledYbiggerThanClipboxHeight && translateYwithinImage) {
+        usesVerticalOffset = true;
+        double temp = (translateY - yMin) + scaleY;
+        startRow = (unsigned short int)std::abs(temp);
+        startRow += 1; // startRow is 1-indexed (first row is 1 not 0)
+        // Rule of three to transform startRow from being 'scaleY' based to being 'height' based
+        startRow = (unsigned short int)((height * startRow) / std::abs(scaleY));
+        endRow = MIN(startRow + clipBoxHeightScaled - 1, height);
+        offset = (unsigned short int)((std::abs(scaleY) + yMin) - std::abs(translateY));
+        // Rule of three to transform offset from being 'scaleY' based to being 'height' based
+        offsetHeight = (unsigned short int)(offset * height / std::abs(scaleY));
+        // Rule of three to transform offset from being 'scaleY' based to being 'scaleHeight' based
+        offsetScaledHeight = (unsigned short int)(offset * scaledHeight / std::abs(scaleY));
+        // Rule of three to transform offset from being 'scaleY' based to being 'maskHeight' based
+        offsetMaskHeight = (unsigned short int)(offset * maskHeight / std::abs(scaleY));
+    }
+
+    if (startCol && startCol <= endCol) {
+        numCols = (endCol - startCol) + 1;
+        startColScaled = (unsigned short int)((scaledWidth * startCol) / width);
+        if (startColScaled == 0) {
+            startColScaled = 1;
+        }
+        endColScaled = (unsigned short int)((scaledWidth * endCol) / width);
+        if (endColScaled == 0) {
+            endColScaled = 1;
+        }
+        scaledNumCols = (endColScaled - startColScaled) + 1;
+    }
 
     // Clamp heights to what Cairo can handle - Issue #991
-    if (height >= MAX_CAIRO_IMAGE_SIZE) {
+    if (height >= MAX_CAIRO_IMAGE_SIZE && (!usesVerticalOffset || ((endRow - startRow) + 1 >= MAX_CAIRO_IMAGE_SIZE))) {
         error(errInternal, -1, "Reducing image height from {0:d} to {1:d} because of Cairo limits", height, MAX_CAIRO_IMAGE_SIZE - 1);
         height = MAX_CAIRO_IMAGE_SIZE - 1;
     }
 
-    if (maskHeight >= MAX_CAIRO_IMAGE_SIZE) {
+    if (maskHeight >= MAX_CAIRO_IMAGE_SIZE && (!usesVerticalOffset || ((endRow - startRow) + 1 >= MAX_CAIRO_IMAGE_SIZE))) {
         error(errInternal, -1, "Reducing maskImage height from {0:d} to {1:d} because of Cairo limits", maskHeight, MAX_CAIRO_IMAGE_SIZE - 1);
         maskHeight = MAX_CAIRO_IMAGE_SIZE - 1;
     }
@@ -2947,84 +3351,37 @@ void CairoOutputDev::drawSoftMaskedImage(GfxState *state, Object *ref, Stream *s
         getMatteColorRgb(colorMap, matteColor, &matteColorRgb);
     }
 
-    ImageStream maskImgStr(maskStr, maskWidth, maskColorMap->getNumPixelComps(), maskColorMap->getBits());
-    if (!maskImgStr.reset()) {
+    maskImage = rescale.getSourceImageSMask(maskStr, maskWidth, maskHeight, scaledWidth, scaledHeight, printing, maskColorMap, startRow, endRow, startCol, endCol, &usedDownscalingMask);
+    if (!maskImage) {
         return;
     }
-
-    maskImage = cairo_image_surface_create(CAIRO_FORMAT_A8, maskWidth, maskHeight);
-    if (cairo_surface_status(maskImage)) {
-        maskImgStr.close();
-        return;
-    }
-
-    maskBuffer = cairo_image_surface_get_data(maskImage);
-    mask_row_stride = cairo_image_surface_get_stride(maskImage);
-    for (y = 0; y < maskHeight; y++) {
-        maskDest = (unsigned char *)(maskBuffer + y * mask_row_stride);
-        pix = maskImgStr.getLine();
-        if (likely(pix != nullptr)) {
-            maskColorMap->getGrayLine(pix, maskDest, maskWidth);
-        }
-    }
-
-    maskImgStr.close();
-
     maskFilter = getFilterForSurface(maskImage, maskInterpolate);
-
-    cairo_surface_mark_dirty(maskImage);
     maskPattern = cairo_pattern_create_for_surface(maskImage);
-    cairo_surface_destroy(maskImage);
+
     if (cairo_pattern_status(maskPattern)) {
+        cairo_surface_destroy(maskImage);
         return;
     }
 
-#if 0
-  /* ICCBased color space doesn't do any color correction
-   * so check its underlying color space as well */
-  int is_identity_transform;
-  is_identity_transform = colorMap->getColorSpace()->getMode() == csDeviceRGB ||
-		  (colorMap->getColorSpace()->getMode() == csICCBased &&
-		   ((GfxICCBasedColorSpace*)colorMap->getColorSpace())->getAlt()->getMode() == csDeviceRGB);
-#endif
-
-    /* TODO: Do we want to cache these? */
-    ImageStream imgStr(str, width, colorMap->getNumPixelComps(), colorMap->getBits());
-    if (!imgStr.reset()) {
-        return;
+    if (matteColor != nullptr) {
+        image = rescale.getSourceImageWithMatte(str, width, height, scaledWidth, scaledHeight, printing, colorMap, &matteColorRgb, maskImage, startRow, endRow, startCol, endCol, &usedDownscaling);
+    } else {
+        image = rescale.getSourceImage(str, width, height, scaledWidth, scaledHeight, printing, colorMap, nullptr, startRow, endRow, startCol, endCol, &usedDownscaling);
     }
 
-    image = cairo_image_surface_create(CAIRO_FORMAT_RGB24, width, height);
-    if (cairo_surface_status(image)) {
-        goto cleanup;
-    }
-
-    buffer = cairo_image_surface_get_data(image);
-    row_stride = cairo_image_surface_get_stride(image);
-    for (y = 0; y < height; y++) {
-        dest = reinterpret_cast<unsigned int *>(buffer + y * row_stride);
-        pix = imgStr.getLine();
-        if (likely(pix != nullptr)) {
-            colorMap->getRGBLine(pix, dest, width);
-            if (matteColor != nullptr) {
-                maskDest = (unsigned char *)(maskBuffer + y * mask_row_stride);
-                applyMask(dest, width, matteColorRgb, maskDest);
-            }
-        }
-    }
-
+    int maskHeightNew = cairo_image_surface_get_height(maskImage);
+    cairo_surface_destroy(maskImage);
     filter = getFilterForSurface(image, interpolate);
 
-    cairo_surface_mark_dirty(image);
-
-    if (matteColor == nullptr) {
+    if (matteColor == nullptr && !usesVerticalOffset) {
         setMimeData(state, str, ref, colorMap, image, height);
     }
 
     pattern = cairo_pattern_create_for_surface(image);
+    int heightNew = cairo_image_surface_get_height(image);
     cairo_surface_destroy(image);
     if (cairo_pattern_status(pattern)) {
-        goto cleanup;
+        return;
     }
 
     LOG(printf("drawSoftMaskedImage %dx%d\n", width, height));
@@ -3037,22 +3394,48 @@ void CairoOutputDev::drawSoftMaskedImage(GfxState *state, Object *ref, Stream *s
         cairo_pattern_set_extend(maskPattern, CAIRO_EXTEND_PAD);
     }
 
-    cairo_matrix_init_translate(&matrix, 0, height);
-    cairo_matrix_scale(&matrix, width, -height);
+    double matHeight = height;
+    double matWidth = numCols ? numCols : width;
+    double matOffset = offsetHeight;
+    if (usedDownscaling) {
+        matHeight = scaledHeight;
+        matWidth = scaledWidth;
+        if (usesVerticalOffset) {
+            if (scaledNumCols) {
+                matWidth = scaledNumCols;
+            }
+            matOffset = offsetScaledHeight;
+        }
+    }
+    cairo_matrix_init_translate(&matrix, 0, matHeight - matOffset);
+    cairo_matrix_scale(&matrix, matWidth, -matHeight);
     cairo_pattern_set_matrix(pattern, &matrix);
     if (cairo_pattern_status(pattern)) {
         cairo_pattern_destroy(pattern);
         cairo_pattern_destroy(maskPattern);
-        goto cleanup;
+        return;
     }
 
-    cairo_matrix_init_translate(&maskMatrix, 0, maskHeight);
-    cairo_matrix_scale(&maskMatrix, maskWidth, -maskHeight);
+    matHeight = maskHeight;
+    matWidth = numCols ? numCols : maskWidth;
+    matOffset = offsetMaskHeight;
+    if (usedDownscalingMask) {
+        matHeight = scaledHeight;
+        matWidth = scaledWidth;
+        if (usesVerticalOffset) {
+            if (scaledNumCols) {
+                matWidth = scaledNumCols;
+            }
+            matOffset = offsetScaledHeight;
+        }
+    }
+    cairo_matrix_init_translate(&maskMatrix, 0, matHeight - matOffset);
+    cairo_matrix_scale(&maskMatrix, matWidth, -matHeight);
     cairo_pattern_set_matrix(maskPattern, &maskMatrix);
     if (cairo_pattern_status(maskPattern)) {
         cairo_pattern_destroy(maskPattern);
         cairo_pattern_destroy(pattern);
-        goto cleanup;
+        return;
     }
 
     if (fill_opacity != 1.0) {
@@ -3093,9 +3476,6 @@ void CairoOutputDev::drawSoftMaskedImage(GfxState *state, Object *ref, Stream *s
 
     cairo_pattern_destroy(maskPattern);
     cairo_pattern_destroy(pattern);
-
-cleanup:
-    imgStr.close();
 }
 
 bool CairoOutputDev::getStreamData(Stream *str, char **buffer, int *length)
@@ -3308,191 +3688,6 @@ void CairoOutputDev::setMimeData(GfxState *state, Stream *str, Object *ref, GfxI
         }
     }
 }
-
-class RescaleDrawImage : public CairoRescaleBox
-{
-private:
-    ImageStream *imgStr;
-    GfxRGB *lookup;
-    int width;
-    GfxImageColorMap *colorMap;
-    const int *maskColors;
-    int current_row;
-    bool imageError;
-    bool fromRGBA;
-
-public:
-    ~RescaleDrawImage() override;
-    cairo_surface_t *getSourceImage(Stream *str, int widthA, int height, int scaledWidth, int scaledHeight, bool printing, GfxImageColorMap *colorMapA, const int *maskColorsA)
-    {
-        cairo_surface_t *image = nullptr;
-        int i;
-
-        lookup = nullptr;
-        colorMap = colorMapA;
-        maskColors = maskColorsA;
-        width = widthA;
-        current_row = -1;
-        imageError = false;
-        fromRGBA = colorMap->getColorSpace()->getMode() == csDeviceRGBA;
-
-        /* TODO: Do we want to cache these? */
-        imgStr = new ImageStream(str, width, colorMap->getNumPixelComps(), colorMap->getBits());
-        if (!imgStr->reset()) {
-            delete imgStr;
-            return image;
-        }
-
-#if 0
-    /* ICCBased color space doesn't do any color correction
-     * so check its underlying color space as well */
-    int is_identity_transform;
-    is_identity_transform = colorMap->getColorSpace()->getMode() == csDeviceRGB ||
-      (colorMap->getColorSpace()->getMode() == csICCBased &&
-       ((GfxICCBasedColorSpace*)colorMap->getColorSpace())->getAlt()->getMode() == csDeviceRGB);
-#endif
-
-        // special case for one-channel (monochrome/gray/separation) images:
-        // build a lookup table here
-        if (colorMap->getNumPixelComps() == 1) {
-            int n;
-            unsigned char pix;
-
-            n = 1 << colorMap->getBits();
-            lookup = (GfxRGB *)gmallocn(n, sizeof(GfxRGB));
-            for (i = 0; i < n; ++i) {
-                pix = (unsigned char)i;
-
-                colorMap->getRGB(&pix, &lookup[i]);
-            }
-        }
-
-        bool needsCustomDownscaling = (width > MAX_CAIRO_IMAGE_SIZE || height > MAX_CAIRO_IMAGE_SIZE);
-
-        if (printing) {
-            if (width > MAX_PRINT_IMAGE_SIZE || height > MAX_PRINT_IMAGE_SIZE) {
-                if (width > height) {
-                    scaledWidth = MAX_PRINT_IMAGE_SIZE;
-                    scaledHeight = MAX_PRINT_IMAGE_SIZE * (double)height / width;
-                } else {
-                    scaledHeight = MAX_PRINT_IMAGE_SIZE;
-                    scaledWidth = MAX_PRINT_IMAGE_SIZE * (double)width / height;
-                }
-                needsCustomDownscaling = true;
-
-                if (scaledWidth == 0) {
-                    scaledWidth = 1;
-                }
-                if (scaledHeight == 0) {
-                    scaledHeight = 1;
-                }
-            }
-        }
-
-        if (!needsCustomDownscaling || scaledWidth >= width || scaledHeight >= height) {
-            // No downscaling. Create cairo image containing the source image data.
-            unsigned char *buffer;
-            ptrdiff_t stride;
-
-            image = cairo_image_surface_create(maskColors || fromRGBA ? CAIRO_FORMAT_ARGB32 : CAIRO_FORMAT_RGB24, width, height);
-
-            if (cairo_surface_status(image)) {
-                goto cleanup;
-            }
-
-            buffer = cairo_image_surface_get_data(image);
-            stride = cairo_image_surface_get_stride(image);
-            for (int y = 0; y < height; y++) {
-                uint32_t *dest = reinterpret_cast<uint32_t *>(buffer + y * stride);
-                getRow(y, dest);
-            }
-        } else {
-            // Downscaling required. Create cairo image the size of the
-            // rescaled image and downscale the source image data into
-            // the cairo image. downScaleImage() will call getRow() to read
-            // source image data from the image stream. This avoids having
-            // to create an image the size of the source image which may
-            // exceed cairo's 32767x32767 image size limit (and also saves a
-            // lot of memory).
-            image = cairo_image_surface_create(maskColors || fromRGBA ? CAIRO_FORMAT_ARGB32 : CAIRO_FORMAT_RGB24, scaledWidth, scaledHeight);
-            if (cairo_surface_status(image)) {
-                goto cleanup;
-            }
-
-            downScaleImage(width, height, scaledWidth, scaledHeight, 0, 0, scaledWidth, scaledHeight, image);
-        }
-        cairo_surface_mark_dirty(image);
-
-    cleanup:
-        gfree(lookup);
-        imgStr->close();
-        delete imgStr;
-        return image;
-    }
-
-    void getRow(int row_num, uint32_t *row_data) override
-    {
-        unsigned char *pix;
-
-        if (row_num <= current_row) {
-            return;
-        }
-
-        while (current_row < row_num) {
-            pix = imgStr->getLine();
-            current_row++;
-        }
-
-        if (unlikely(pix == nullptr)) {
-            memset(row_data, 0, width * 4);
-            if (!imageError) {
-                error(errInternal, -1, "Bad image stream");
-                imageError = true;
-            }
-        } else if (lookup) {
-            unsigned char *p = pix;
-            GfxRGB rgb;
-
-            for (int i = 0; i < width; i++) {
-                rgb = lookup[*p];
-                row_data[i] = ((int)colToByte(rgb.r) << 16) | ((int)colToByte(rgb.g) << 8) | ((int)colToByte(rgb.b) << 0);
-                p++;
-            }
-        } else if (fromRGBA) {
-            // Case of transparent JPX images, they contain RGBA data · Issue #1486
-            GfxDeviceRGBAColorSpace *rgbaCS = dynamic_cast<GfxDeviceRGBAColorSpace *>(colorMap->getColorSpace());
-            if (rgbaCS) {
-                rgbaCS->getARGBPremultipliedLine(pix, row_data, width);
-            } else {
-                error(errSyntaxWarning, -1, "CairoOutputDev: Unexpected fallback from RGBA to RGB");
-                colorMap->getRGBLine(pix, row_data, width);
-            }
-        } else {
-            colorMap->getRGBLine(pix, row_data, width);
-        }
-
-        if (maskColors) {
-            for (int x = 0; x < width; x++) {
-                bool is_opaque = false;
-                for (int i = 0; i < colorMap->getNumPixelComps(); ++i) {
-                    if (pix[i] < maskColors[2 * i] || pix[i] > maskColors[2 * i + 1]) {
-                        is_opaque = true;
-                        break;
-                    }
-                }
-                if (is_opaque) {
-                    *row_data |= 0xff000000;
-                } else {
-                    *row_data = 0;
-                }
-                row_data++;
-                pix += colorMap->getNumPixelComps();
-            }
-        }
-    }
-};
-
-RescaleDrawImage::~RescaleDrawImage() = default;
 
 void CairoOutputDev::drawImage(GfxState *state, Object *ref, Stream *str, int widthA, int heightA, GfxImageColorMap *colorMap, bool interpolate, const int *maskColors, bool inlineImg)
 {

@@ -247,6 +247,7 @@ static int compute_coverage(int coverage[], int src_length, int dest_length)
     return ratio;
 }
 
+// start_column and start_row must be 0-indexed and based on scaled_width and scaled_height respectively.
 bool CairoRescaleBox::downScaleImage(unsigned orig_width, unsigned orig_height, signed scaled_width, signed scaled_height, unsigned short int start_column, unsigned short int start_row, unsigned short int width, unsigned short int height,
                                      cairo_surface_t *dest_surface)
 {
@@ -350,4 +351,147 @@ cleanup:
     free(scanline);
 
     return retval;
+}
+
+/**
+ * Downscales an image using a box filter algorithm.
+ * Source image must be in 8bit format (grayscale) and
+ * destination image is returned in Cairo 8bit format (CAIRO_FORMAT_A8)
+ *
+ * @param orig_width: Original image width (source image)
+ * @param orig_height: Original image height (source image)
+ * @param scaled_width: Target downscaled width (dest image)
+ * @param scaled_height: Target downscaled height (dest image)
+ * @param start_column: Start column (1-indexed, 0 means use entire width)
+ * @param end_column: End column (1-indexed, this column is included in the range)
+ * @param start_row: Start row (1-indexed, 0 means use entire height)
+ * @param end_row: End row (1-indexed, this row is included in the range)
+ *
+ * @return: A CAIRO_FORMAT_A8 surface with the downscaled image, or nullptr on error
+ */
+cairo_surface_t *CairoRescaleBox::downScaleImageA8(unsigned short int orig_width, unsigned short int orig_height, unsigned short int scaled_width, unsigned short int scaled_height, unsigned short int start_column,
+                                                   unsigned short int end_column, unsigned short int start_row, unsigned short int end_row)
+{
+    cairo_surface_t *dest_surface;
+    unsigned char *dest_data;
+    uint8_t *source_row;
+    unsigned long *accum;
+    unsigned int *count;
+    int dest_stride;
+    unsigned short int start_col0, end_col0, start_row0, end_row0;
+    unsigned short int source_width, source_height;
+    double x_ratio, y_ratio;
+
+    if (orig_width == 0 || orig_height == 0 || scaled_width >= orig_width || scaled_height >= orig_height) {
+        printf("downScaleImageA8(): Bad parameters\n");
+        return nullptr;
+    }
+
+    // Convert from 1-index to 0-index and set defaults
+    if (start_column == 0) {
+        start_col0 = 0;
+        end_col0 = orig_width - 1; // set full width
+    } else {
+        start_col0 = start_column - 1;
+        end_col0 = end_column - 1;
+    }
+    if (start_row == 0) {
+        start_row0 = 0;
+        end_row0 = orig_height - 1; // set full height
+    } else {
+        start_row0 = start_row - 1;
+        end_row0 = end_row - 1;
+    }
+
+    if (start_col0 >= orig_width || end_col0 >= orig_width || start_row0 >= orig_height || end_row0 >= orig_height || start_col0 > end_col0 || start_row0 > end_row0) {
+        printf("downScaleImageA8(): Bad cropping parameters\n");
+        return nullptr;
+    }
+
+    source_width = end_col0 - start_col0 + 1;
+    source_height = end_row0 - start_row0 + 1;
+
+    dest_surface = cairo_image_surface_create(CAIRO_FORMAT_A8, scaled_width, scaled_height);
+
+    if (cairo_surface_status(dest_surface) != CAIRO_STATUS_SUCCESS) {
+        cairo_surface_destroy(dest_surface);
+        return nullptr;
+    }
+
+    dest_stride = cairo_image_surface_get_stride(dest_surface);
+    dest_data = cairo_image_surface_get_data(dest_surface);
+
+    // Allocate buffer for source row data (8-bit grayscale pixels)
+    source_row = (uint8_t *)gmallocn(source_width, sizeof(uint8_t));
+    if (!source_row) {
+        cairo_surface_destroy(dest_surface);
+        return nullptr;
+    }
+
+    // Use direct accumulator array - sized to match the output dimensions
+    accum = (unsigned long *)calloc(scaled_width * scaled_height, sizeof(unsigned long));
+    count = (unsigned int *)calloc(scaled_width * scaled_height, sizeof(unsigned int));
+
+    if (!accum || !count) {
+        free(source_row);
+        gfree(accum);
+        gfree(count);
+        cairo_surface_destroy(dest_surface);
+        return nullptr;
+    }
+
+    x_ratio = (double)source_width / scaled_width;
+    y_ratio = (double)source_height / scaled_height;
+
+    for (unsigned int src_y = start_row0; src_y <= end_row0; src_y++) {
+        getRowA8(src_y, source_row, start_col0, end_col0);
+
+        // Determine which destination rows this source row contributes to
+        int dest_y_min = (int)((src_y - start_row0) / y_ratio);
+        int dest_y_max = (int)((src_y + 1 - start_row0) / y_ratio);
+
+        dest_y_min = (dest_y_min < 0) ? 0 : (dest_y_min >= scaled_height ? scaled_height - 1 : dest_y_min);
+        dest_y_max = (dest_y_max < 0) ? 0 : (dest_y_max >= scaled_height ? scaled_height - 1 : dest_y_max);
+
+        for (unsigned int src_x = 0; src_x < source_width; src_x++) {
+            uint8_t gray_value = source_row[src_x];
+
+            // Determine which destination columns this source column contributes to
+            int dest_x_min = (int)(src_x / x_ratio);
+            int dest_x_max = (int)((src_x + 1) / x_ratio);
+
+            dest_x_min = (dest_x_min < 0) ? 0 : (dest_x_min >= scaled_width ? scaled_width - 1 : dest_x_min);
+            dest_x_max = (dest_x_max < 0) ? 0 : (dest_x_max >= scaled_width ? scaled_width - 1 : dest_x_max);
+
+            // Add this pixel's contribution to all affected destination pixels
+            for (int dest_y = dest_y_min; dest_y <= dest_y_max; dest_y++) {
+                for (int dest_x = dest_x_min; dest_x <= dest_x_max; dest_x++) {
+                    int dest_idx = dest_y * scaled_width + dest_x;
+                    accum[dest_idx] += gray_value;
+                    count[dest_idx]++;
+                }
+            }
+        }
+    }
+
+    // Calculate final pixel values and set them in the destination surface
+    for (int dest_y = 0; dest_y < scaled_height; dest_y++) {
+        unsigned char *dest_row = dest_data + dest_y * dest_stride;
+
+        for (int dest_x = 0; dest_x < scaled_width; dest_x++) {
+            int dest_idx = dest_y * scaled_width + dest_x;
+            unsigned int pixel_count = count[dest_idx];
+
+            // Calculate average, avoiding division by zero
+            dest_row[dest_x] = (pixel_count > 0) ? (unsigned char)(accum[dest_idx] / pixel_count) : 0;
+        }
+    }
+
+    free(source_row);
+    free(accum);
+    free(count);
+
+    cairo_surface_mark_dirty(dest_surface);
+
+    return dest_surface;
 }
