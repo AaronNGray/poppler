@@ -3263,33 +3263,23 @@ private:
 
 RescaleDrawImage::~RescaleDrawImage() = default;
 
-// XXX: is this affect by AIS(alpha is shape)?
-void CairoOutputDev::drawSoftMaskedImage(GfxState *state, Object *ref, Stream *str, int width, int height, GfxImageColorMap *colorMap, bool interpolate, Stream *maskStr, int maskWidth, int maskHeight, GfxImageColorMap *maskColorMap,
-                                         bool maskInterpolate)
+/* Checks the GfxState of an image being drawn, to return true if according to its CTM and clip region, only part
+ * of the image will be visible, and returns that part in out parameters 'startRow' and 'endRow'.
+ * Original height of image is passed on 'height' parameter.
+ * Returned 'startRow' and 'endRow' are:
+ *  - 1-indexed
+ *  - according to original image height
+ *  - both included in the range
+ */
+static bool hasVerticalOffset(GfxState *state, int height, unsigned short int *startRow, unsigned short int *endRow)
 {
-    cairo_surface_t *maskImage, *image;
-    cairo_pattern_t *maskPattern, *pattern;
-    cairo_matrix_t maskMatrix, matrix, cairoMatrix;
-    cairo_filter_t filter;
-    cairo_filter_t maskFilter;
-    GfxRGB matteColorRgb;
-    int scaledWidth, scaledHeight;
-    unsigned short int startRow, endRow;
-    unsigned short int startCol, endCol, startColScaled, endColScaled, numCols, scaledNumCols;
-    bool scaledYbiggerThanClipboxHeight, translateYwithinImage;
-    bool usedDownscaling, usedDownscalingMask;
-    RescaleDrawImage rescale;
-
-    cairo_get_matrix(cairo, &cairoMatrix);
-    getScaledSize(&cairoMatrix, width, height, &scaledWidth, &scaledHeight);
-
-    startRow = endRow = 0;
-    startCol = endCol = 0;
-    numCols = scaledNumCols = 0;
     const double *cm = state->getCTM();
     const double translateY = cm[5];
     const double scaleY = cm[3];
     double xMin, yMin, xMax, yMax;
+    unsigned short int sRow, eRow;
+    bool scaledYbiggerThanClipboxHeight, translateYwithinImage;
+
     state->getClipBBox(&xMin, &yMin, &xMax, &yMax);
     const unsigned short int clipBoxHeight = (unsigned short int)(yMax - yMin);
     // Rule of three to transform clipBoxHeight from being 'scaleY' based to being 'height' based
@@ -3308,18 +3298,64 @@ void CairoOutputDev::drawSoftMaskedImage(GfxState *state, Object *ref, Stream *s
             translateYwithinImage = false;
         }
     }
+
+    if (scaledYbiggerThanClipboxHeight && translateYwithinImage) {
+        double temp = (translateY - yMin) + scaleY;
+        sRow = (unsigned short int)std::abs(temp);
+        sRow += 1; // startRow is 1-indexed (first row is 1 not 0)
+
+        // Rule of three to transform startRow from being 'scaleY' based to being 'height' based
+        sRow = (unsigned short int)((height * sRow) / std::abs(scaleY));
+        eRow = MIN(sRow + clipBoxHeightScaled - 1, height);
+
+        *startRow = sRow;
+        *endRow = eRow;
+        return true;
+    }
+
+    return false;
+}
+
+// XXX: is this affect by AIS(alpha is shape)?
+void CairoOutputDev::drawSoftMaskedImage(GfxState *state, Object *ref, Stream *str, int width, int height, GfxImageColorMap *colorMap, bool interpolate, Stream *maskStr, int maskWidth, int maskHeight, GfxImageColorMap *maskColorMap,
+                                         bool maskInterpolate)
+{
+    cairo_surface_t *maskImage, *image;
+    cairo_pattern_t *maskPattern, *pattern;
+    cairo_matrix_t maskMatrix, matrix, cairoMatrix;
+    cairo_filter_t filter;
+    cairo_filter_t maskFilter;
+    GfxRGB matteColorRgb;
+    int scaledWidth, scaledHeight;
+    unsigned short int startRow, endRow;
+    unsigned short int startCol, endCol, startColScaled, endColScaled, numCols, scaledNumCols;
+    bool usedDownscaling, usedDownscalingMask;
+    RescaleDrawImage rescale;
+
+    cairo_get_matrix(cairo, &cairoMatrix);
+    getScaledSize(&cairoMatrix, width, height, &scaledWidth, &scaledHeight);
+
+    startRow = endRow = 0;
+    startCol = endCol = 0;
+    numCols = scaledNumCols = 0;
+    const double *cm = state->getCTM();
+    const double translateY = cm[5];
+    const double scaleY = cm[3];
+    double xMin, yMin, xMax, yMax;
+    state->getClipBBox(&xMin, &yMin, &xMax, &yMax);
+
     unsigned short int offset, offsetHeight, offsetScaledHeight, offsetMaskHeight;
     offset = offsetHeight = offsetScaledHeight = offsetMaskHeight = 0;
-    bool usesVerticalOffset = false;
-    if (scaledYbiggerThanClipboxHeight && translateYwithinImage) {
-        usesVerticalOffset = true;
-        double temp = (translateY - yMin) + scaleY;
-        startRow = (unsigned short int)std::abs(temp);
-        startRow += 1; // startRow is 1-indexed (first row is 1 not 0)
-        // Rule of three to transform startRow from being 'scaleY' based to being 'height' based
-        startRow = (unsigned short int)((height * startRow) / std::abs(scaleY));
-        endRow = MIN(startRow + clipBoxHeightScaled - 1, height);
+    bool usesVerticalOffset = hasVerticalOffset(state, height, &startRow, &endRow);
+    bool calledFromImageOutputDev = false;
+    if (usesVerticalOffset) {
+        if (dynamic_cast<CairoImageOutputDev *>(this) != nullptr) {
+            calledFromImageOutputDev = true;
+            scaledHeight = height;
+            scaledWidth = width;
+        }
         offset = (unsigned short int)((std::abs(scaleY) + yMin) - std::abs(translateY));
+
         // Rule of three to transform offset from being 'scaleY' based to being 'height' based
         offsetHeight = (unsigned short int)(offset * height / std::abs(scaleY));
         // Rule of three to transform offset from being 'scaleY' based to being 'scaleHeight' based
@@ -3413,6 +3449,10 @@ void CairoOutputDev::drawSoftMaskedImage(GfxState *state, Object *ref, Stream *s
             matOffset = offsetScaledHeight;
         }
     }
+    if (usesVerticalOffset && calledFromImageOutputDev) {
+        matOffset = 0.;
+        matHeight = heightNew;
+    }
     cairo_matrix_init_translate(&matrix, 0, matHeight - matOffset);
     cairo_matrix_scale(&matrix, matWidth, -matHeight);
     cairo_pattern_set_matrix(pattern, &matrix);
@@ -3434,6 +3474,10 @@ void CairoOutputDev::drawSoftMaskedImage(GfxState *state, Object *ref, Stream *s
             }
             matOffset = offsetScaledHeight;
         }
+    }
+    if (usesVerticalOffset && calledFromImageOutputDev) {
+        matOffset = 0.;
+        matHeight = maskHeightNew;
     }
     cairo_matrix_init_translate(&maskMatrix, 0, matHeight - matOffset);
     cairo_matrix_scale(&maskMatrix, matWidth, -matHeight);
@@ -3993,6 +4037,8 @@ void CairoImageOutputDev::drawSoftMaskedImage(GfxState *state, Object *ref, Stre
     cairo_surface_t *surface;
     double x1, y1, x2, y2;
     CairoImage *image;
+    unsigned short int startRow, endRow;
+    int originalHeight;
 
     getBBox(state, width, height, &x1, &y1, &x2, &y2);
 
@@ -4000,13 +4046,21 @@ void CairoImageOutputDev::drawSoftMaskedImage(GfxState *state, Object *ref, Stre
     saveImage(image);
 
     if (imgDrawCbk && imgDrawCbk(numImages - 1, imgDrawCbkData)) {
+        originalHeight = height;
+        if (hasVerticalOffset(state, originalHeight, &startRow, &endRow)) {
+            height = (endRow - startRow) + 1;
+        }
+        if (height >= MAX_CAIRO_IMAGE_SIZE) {
+            error(errInternal, -1, "Reducing image height from {0:d} to {1:d} because of Cairo limits", height, MAX_CAIRO_IMAGE_SIZE - 1);
+            height = MAX_CAIRO_IMAGE_SIZE - 1;
+        }
         surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, width, height);
         cr = cairo_create(surface);
         setCairo(cr);
         cairo_translate(cr, 0, height);
         cairo_scale(cr, width, -height);
 
-        CairoOutputDev::drawSoftMaskedImage(state, ref, str, width, height, colorMap, interpolate, maskStr, maskWidth, maskHeight, maskColorMap, maskInterpolate);
+        CairoOutputDev::drawSoftMaskedImage(state, ref, str, width, originalHeight, colorMap, interpolate, maskStr, maskWidth, maskHeight, maskColorMap, maskInterpolate);
         image->setImage(surface);
 
         setCairo(nullptr);
