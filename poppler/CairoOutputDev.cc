@@ -3568,6 +3568,10 @@ void CairoOutputDev::drawImage(GfxState *state, Object *ref, Stream *str, int wi
         if (printing) {
             cairo_paint(cairo);
         } else {
+            // If we are not drawing a mask or a shape we gain nothing from having antialias enabled,
+            // in fact it creates glitches (white stripes) at the edges of the image, this is more
+            // noticeable when several small images are used to create a larger image - Issue #942
+            cairo_set_antialias(cairo, CAIRO_ANTIALIAS_NONE);
             cairo_fill(cairo);
         }
     }
