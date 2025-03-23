@@ -1347,6 +1347,9 @@ void CairoOutputDev::fill(GfxState *state)
     LOG(printf("fill\n"));
     // XXX: how do we get the path
     if (mask) {
+        // disabling antialias here fixes bug where white
+        // stripes appear at clip region edges - Issue #1471
+        cairo_set_antialias(cairo, CAIRO_ANTIALIAS_NONE);
         cairo_save(cairo);
         cairo_clip(cairo);
         if (strokePathClip) {
