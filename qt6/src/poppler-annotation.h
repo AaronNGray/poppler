@@ -857,6 +857,8 @@ public:
 
     [[nodiscard]] SigningResult sign(const QString &outputFileName, const PDFConverter::NewSignatureData &data);
 
+    ErrorString lastSigningErrorDetails() const;
+
 private:
     explicit SignatureAnnotation(SignatureAnnotationPrivate &dd);
     Q_DECLARE_PRIVATE(SignatureAnnotation)

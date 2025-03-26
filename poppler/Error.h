@@ -56,4 +56,23 @@ extern void POPPLER_PRIVATE_EXPORT setErrorCallback(ErrorCallback cbk);
 
 extern void CDECL POPPLER_PRIVATE_EXPORT error(ErrorCategory category, Goffset pos, const char *msg, ...) GOOSTRING_FORMAT;
 
+enum class ErrorStringType
+{
+    ErrorCodeString,
+    UserString
+};
+
+struct ErrorString
+{
+    std::string text;
+    ErrorStringType type;
+};
+
+// Currently our base compiler doesn't support std::source_location, so we will have to deal with these compiler specific things
+#define ERROR_IN_CODE_LOCATION                                                                                                                                                                                                                 \
+    ErrorString                                                                                                                                                                                                                                \
+    {                                                                                                                                                                                                                                          \
+        std::string { __PRETTY_FUNCTION__ } + ":" + std::to_string(__LINE__), ErrorStringType::ErrorCodeString                                                                                                                                 \
+    }
+
 #endif
