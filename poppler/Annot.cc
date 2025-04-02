@@ -1066,7 +1066,7 @@ void AnnotAppearance::removeStream(Ref refToStream)
             continue;
         }
         Annots *annots = page->getAnnots();
-        for (Annot *annot : annots->getAnnots()) {
+        for (const std::shared_ptr<Annot> &annot : annots->getAnnots()) {
             AnnotAppearance *annotAp = annot->getAppearStreams();
             if (annotAp && annotAp != this && annotAp->referencesStream(refToStream)) {
                 return; // Another annotation points to the stream -> Don't delete it
@@ -1265,7 +1265,6 @@ double AnnotAppearanceBBox::getPageYMax() const
 Annot::Annot(PDFDoc *docA, PDFRectangle *rectA)
 {
 
-    refCnt = 1;
     flags = flagUnknown;
     type = typeUnknown;
 
@@ -1286,7 +1285,6 @@ Annot::Annot(PDFDoc *docA, PDFRectangle *rectA)
 
 Annot::Annot(PDFDoc *docA, Object &&dictObject)
 {
-    refCnt = 1;
     hasRef = false;
     flags = flagUnknown;
     type = typeUnknown;
@@ -1296,7 +1294,6 @@ Annot::Annot(PDFDoc *docA, Object &&dictObject)
 
 Annot::Annot(PDFDoc *docA, Object &&dictObject, const Object *obj)
 {
-    refCnt = 1;
     if (obj->isRef()) {
         hasRef = true;
         ref = obj->getRef();
@@ -1675,18 +1672,6 @@ void Annot::removeReferencedObjects()
 {
     // Remove appearance streams (if any)
     invalidateAppearance();
-}
-
-void Annot::incRefCnt()
-{
-    refCnt++;
-}
-
-void Annot::decRefCnt()
-{
-    if (--refCnt == 0) {
-        delete this;
-    }
 }
 
 Annot::~Annot() = default;
@@ -2237,7 +2222,7 @@ void AnnotMarkup::setLabel(std::unique_ptr<GooString> &&new_label)
     update("T", Object(label->copy()));
 }
 
-void AnnotMarkup::setPopup(std::unique_ptr<AnnotPopup> &&new_popup)
+void AnnotMarkup::setPopup(std::shared_ptr<AnnotPopup> new_popup)
 {
     // If there exists an old popup annotation that is already
     // associated with a page, then we need to remove that
@@ -2246,7 +2231,7 @@ void AnnotMarkup::setPopup(std::unique_ptr<AnnotPopup> &&new_popup)
     if (popup && popup->getPageNum() != 0) {
         Page *pageobj = doc->getPage(popup->getPageNum());
         if (pageobj) {
-            pageobj->removeAnnot(popup.get());
+            pageobj->removeAnnot(popup);
         }
     }
 
@@ -2263,7 +2248,7 @@ void AnnotMarkup::setPopup(std::unique_ptr<AnnotPopup> &&new_popup)
             Page *pageobj = doc->getPage(page);
             assert(pageobj != nullptr); // pageobj should exist in doc (see setPage())
 
-            pageobj->addAnnot(popup.get());
+            pageobj->addAnnot(popup);
         }
     } else {
         popup = nullptr;
@@ -2295,7 +2280,7 @@ void AnnotMarkup::removeReferencedObjects()
 
     // Remove popup
     if (popup) {
-        pageobj->removeAnnot(popup.get());
+        pageobj->removeAnnot(popup);
     }
 
     Annot::removeReferencedObjects();
@@ -2962,7 +2947,7 @@ void AnnotFreeText::setStyleString(GooString *new_string)
     update("DS", Object(styleString->copy()));
 }
 
-void AnnotFreeText::setCalloutLine(AnnotCalloutLine *line)
+void AnnotFreeText::setCalloutLine(std::unique_ptr<AnnotCalloutLine> &&line)
 {
     Object obj1;
     if (line == nullptr) {
@@ -2977,15 +2962,13 @@ void AnnotFreeText::setCalloutLine(AnnotCalloutLine *line)
         obj1.arrayAdd(Object(x2));
         obj1.arrayAdd(Object(y2));
 
-        AnnotCalloutMultiLine *mline = dynamic_cast<AnnotCalloutMultiLine *>(line);
+        AnnotCalloutMultiLine *mline = dynamic_cast<AnnotCalloutMultiLine *>(line.get());
         if (mline) {
             double x3 = mline->getX3(), y3 = mline->getY3();
             obj1.arrayAdd(Object(x3));
             obj1.arrayAdd(Object(y3));
-            calloutLine = std::make_unique<AnnotCalloutMultiLine>(x1, y1, x2, y2, x3, y3);
-        } else {
-            calloutLine = std::make_unique<AnnotCalloutLine>(x1, y1, x2, y2);
         }
+        calloutLine = std::move(line);
     }
 
     update("CL", std::move(obj1));
@@ -5758,10 +5741,7 @@ AnnotStamp::AnnotStamp(PDFDoc *docA, Object &&dictObject, const Object *obj) : A
     initialize(docA, annotObj.getDict());
 }
 
-AnnotStamp::~AnnotStamp()
-{
-    delete stampImageHelper;
-}
+AnnotStamp::~AnnotStamp() = default;
 
 void AnnotStamp::initialize(PDFDoc *docA, Dict *dict)
 {
@@ -5772,7 +5752,6 @@ void AnnotStamp::initialize(PDFDoc *docA, Dict *dict)
         icon = std::make_unique<GooString>("Draft");
     }
 
-    stampImageHelper = nullptr;
     updatedAppearanceStream = Ref::INVALID();
 }
 
@@ -5955,30 +5934,22 @@ void AnnotStamp::setIcon(GooString *new_icon)
     invalidateAppearance();
 }
 
-void AnnotStamp::setCustomImage(AnnotStampImageHelper *stampImageHelperA)
+void AnnotStamp::setCustomImage(std::unique_ptr<AnnotStampImageHelper> &&stampImageHelperA)
 {
     if (!stampImageHelperA) {
         return;
     }
 
     annotLocker();
-    clearCustomImage();
+    if (stampImageHelper) {
+        stampImageHelper->removeAnnotStampImageObject();
+    }
 
-    stampImageHelper = stampImageHelperA;
+    stampImageHelper = std::move(stampImageHelperA);
 
     // Regenerate appearance stream
     invalidateAppearance();
     updateAppearanceResDict();
-}
-
-void AnnotStamp::clearCustomImage()
-{
-    if (stampImageHelper != nullptr) {
-        stampImageHelper->removeAnnotStampImageObject();
-        delete stampImageHelper;
-        stampImageHelper = nullptr;
-        invalidateAppearance();
-    }
 }
 
 //------------------------------------------------------------------------
@@ -7481,96 +7452,90 @@ const GooString *AnnotRichMedia::Params::getFlashVars() const
 
 Annots::Annots(PDFDoc *docA, int page, Object *annotsObj)
 {
-    Annot *annot;
-    int i;
-
     doc = docA;
 
     if (annotsObj->isArray()) {
-        for (i = 0; i < annotsObj->arrayGetLength(); ++i) {
+        for (int i = 0; i < annotsObj->arrayGetLength(); ++i) {
             // get the Ref to this annot and pass it to Annot constructor
             // this way, it'll be possible for the annot to retrieve the corresponding
             // form widget
             Object obj1 = annotsObj->arrayGet(i);
             if (obj1.isDict()) {
                 const Object &obj2 = annotsObj->arrayGetNF(i);
-                annot = createAnnot(std::move(obj1), &obj2);
+                std::shared_ptr<Annot> annot = createAnnot(std::move(obj1), &obj2);
                 if (annot) {
                     if (annot->isOk()) {
                         annot->setPage(page, false); // Don't change /P
                         appendAnnot(annot);
                     }
-                    annot->decRefCnt();
                 }
             }
         }
     }
 }
 
-void Annots::appendAnnot(Annot *annot)
+void Annots::appendAnnot(std::shared_ptr<Annot> annot)
 {
     if (annot && annot->isOk()) {
-        annots.push_back(annot);
-        annot->incRefCnt();
+        annots.push_back(std::move(annot));
     }
 }
 
-bool Annots::removeAnnot(Annot *annot)
+bool Annots::removeAnnot(const std::shared_ptr<Annot> &annot)
 {
     auto idx = std::ranges::find(annots, annot);
 
     if (idx == annots.end()) {
         return false;
     } else {
-        annot->decRefCnt();
         annots.erase(idx);
         return true;
     }
 }
 
-Annot *Annots::createAnnot(Object &&dictObject, const Object *obj)
+std::shared_ptr<Annot> Annots::createAnnot(Object &&dictObject, const Object *obj)
 {
-    Annot *annot = nullptr;
+    std::shared_ptr<Annot> annot = nullptr;
     Object obj1 = dictObject.dictLookup("Subtype");
     if (obj1.isName()) {
         const char *typeName = obj1.getName();
 
         if (!strcmp(typeName, "Text")) {
-            annot = new AnnotText(doc, std::move(dictObject), obj);
+            annot = std::make_shared<AnnotText>(doc, std::move(dictObject), obj);
         } else if (!strcmp(typeName, "Link")) {
-            annot = new AnnotLink(doc, std::move(dictObject), obj);
+            annot = std::make_shared<AnnotLink>(doc, std::move(dictObject), obj);
         } else if (!strcmp(typeName, "FreeText")) {
-            annot = new AnnotFreeText(doc, std::move(dictObject), obj);
+            annot = std::make_shared<AnnotFreeText>(doc, std::move(dictObject), obj);
         } else if (!strcmp(typeName, "Line")) {
-            annot = new AnnotLine(doc, std::move(dictObject), obj);
+            annot = std::make_shared<AnnotLine>(doc, std::move(dictObject), obj);
         } else if (!strcmp(typeName, "Square")) {
-            annot = new AnnotGeometry(doc, std::move(dictObject), obj);
+            annot = std::make_shared<AnnotGeometry>(doc, std::move(dictObject), obj);
         } else if (!strcmp(typeName, "Circle")) {
-            annot = new AnnotGeometry(doc, std::move(dictObject), obj);
+            annot = std::make_shared<AnnotGeometry>(doc, std::move(dictObject), obj);
         } else if (!strcmp(typeName, "Polygon")) {
-            annot = new AnnotPolygon(doc, std::move(dictObject), obj);
+            annot = std::make_shared<AnnotPolygon>(doc, std::move(dictObject), obj);
         } else if (!strcmp(typeName, "PolyLine")) {
-            annot = new AnnotPolygon(doc, std::move(dictObject), obj);
+            annot = std::make_shared<AnnotPolygon>(doc, std::move(dictObject), obj);
         } else if (!strcmp(typeName, "Highlight")) {
-            annot = new AnnotTextMarkup(doc, std::move(dictObject), obj);
+            annot = std::make_shared<AnnotTextMarkup>(doc, std::move(dictObject), obj);
         } else if (!strcmp(typeName, "Underline")) {
-            annot = new AnnotTextMarkup(doc, std::move(dictObject), obj);
+            annot = std::make_shared<AnnotTextMarkup>(doc, std::move(dictObject), obj);
         } else if (!strcmp(typeName, "Squiggly")) {
-            annot = new AnnotTextMarkup(doc, std::move(dictObject), obj);
+            annot = std::make_shared<AnnotTextMarkup>(doc, std::move(dictObject), obj);
         } else if (!strcmp(typeName, "StrikeOut")) {
-            annot = new AnnotTextMarkup(doc, std::move(dictObject), obj);
+            annot = std::make_shared<AnnotTextMarkup>(doc, std::move(dictObject), obj);
         } else if (!strcmp(typeName, "Stamp")) {
-            annot = new AnnotStamp(doc, std::move(dictObject), obj);
+            annot = std::make_shared<AnnotStamp>(doc, std::move(dictObject), obj);
         } else if (!strcmp(typeName, "Caret")) {
-            annot = new AnnotCaret(doc, std::move(dictObject), obj);
+            annot = std::make_shared<AnnotCaret>(doc, std::move(dictObject), obj);
         } else if (!strcmp(typeName, "Ink")) {
-            annot = new AnnotInk(doc, std::move(dictObject), obj);
+            annot = std::make_shared<AnnotInk>(doc, std::move(dictObject), obj);
         } else if (!strcmp(typeName, "FileAttachment")) {
-            annot = new AnnotFileAttachment(doc, std::move(dictObject), obj);
+            annot = std::make_shared<AnnotFileAttachment>(doc, std::move(dictObject), obj);
         } else if (!strcmp(typeName, "Sound")) {
-            annot = new AnnotSound(doc, std::move(dictObject), obj);
+            annot = std::make_shared<AnnotSound>(doc, std::move(dictObject), obj);
         } else if (!strcmp(typeName, "Movie")) {
-            annot = new AnnotMovie(doc, std::move(dictObject), obj);
+            annot = std::make_shared<AnnotMovie>(doc, std::move(dictObject), obj);
         } else if (!strcmp(typeName, "Widget")) {
             // Find the annot in forms
             if (obj->isRef()) {
@@ -7579,25 +7544,24 @@ Annot *Annots::createAnnot(Object &&dictObject, const Object *obj)
                     FormWidget *widget = form->findWidgetByRef(obj->getRef());
                     if (widget) {
                         annot = widget->getWidgetAnnotation();
-                        annot->incRefCnt();
                     }
                 }
             }
             if (!annot) {
-                annot = new AnnotWidget(doc, std::move(dictObject), obj);
+                annot = std::make_shared<AnnotWidget>(doc, std::move(dictObject), obj);
             }
         } else if (!strcmp(typeName, "Screen")) {
-            annot = new AnnotScreen(doc, std::move(dictObject), obj);
+            annot = std::make_shared<AnnotScreen>(doc, std::move(dictObject), obj);
         } else if (!strcmp(typeName, "PrinterMark")) {
-            annot = new Annot(doc, std::move(dictObject), obj);
+            annot = std::make_shared<Annot>(doc, std::move(dictObject), obj);
         } else if (!strcmp(typeName, "TrapNet")) {
-            annot = new Annot(doc, std::move(dictObject), obj);
+            annot = std::make_shared<Annot>(doc, std::move(dictObject), obj);
         } else if (!strcmp(typeName, "Watermark")) {
-            annot = new Annot(doc, std::move(dictObject), obj);
+            annot = std::make_shared<Annot>(doc, std::move(dictObject), obj);
         } else if (!strcmp(typeName, "3D")) {
-            annot = new Annot3D(doc, std::move(dictObject), obj);
+            annot = std::make_shared<Annot3D>(doc, std::move(dictObject), obj);
         } else if (!strcmp(typeName, "RichMedia")) {
-            annot = new AnnotRichMedia(doc, std::move(dictObject), obj);
+            annot = std::make_shared<AnnotRichMedia>(doc, std::move(dictObject), obj);
         } else if (!strcmp(typeName, "Popup")) {
             /* Popup annots are already handled by markup annots
              * Here we only care about popup annots without a
@@ -7605,21 +7569,21 @@ Annot *Annots::createAnnot(Object &&dictObject, const Object *obj)
              */
             Object obj2 = dictObject.dictLookup("Parent");
             if (obj2.isNull()) {
-                annot = new AnnotPopup(doc, std::move(dictObject), obj);
+                annot = std::make_shared<AnnotPopup>(doc, std::move(dictObject), obj);
             } else {
                 annot = nullptr;
             }
         } else {
-            annot = new Annot(doc, std::move(dictObject), obj);
+            annot = std::make_shared<Annot>(doc, std::move(dictObject), obj);
         }
     }
 
     return annot;
 }
 
-Annot *Annots::findAnnot(Ref *ref)
+std::shared_ptr<Annot> Annots::findAnnot(Ref *ref)
 {
-    for (auto *annot : annots) {
+    for (const auto &annot : annots) {
         if (annot->match(ref)) {
             return annot;
         }
@@ -7627,12 +7591,7 @@ Annot *Annots::findAnnot(Ref *ref)
     return nullptr;
 }
 
-Annots::~Annots()
-{
-    for (auto *annot : annots) {
-        annot->decRefCnt();
-    }
-}
+Annots::~Annots() = default;
 
 //------------------------------------------------------------------------
 // AnnotAppearanceBuilder
