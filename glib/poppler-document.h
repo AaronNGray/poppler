@@ -539,6 +539,7 @@ struct _PopplerPageRange
 
 G_END_DECLS
 
+G_DEFINE_AUTOPTR_CLEANUP_FUNC(PopplerDocument, g_object_unref)
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(PopplerIndexIter, poppler_index_iter_free)
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(PopplerFontInfo, poppler_font_info_free)
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(PopplerFontsIter, poppler_fonts_iter_free)

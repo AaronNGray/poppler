@@ -445,6 +445,7 @@ void poppler_annot_mapping_free(PopplerAnnotMapping *mapping);
 
 G_END_DECLS
 
+G_DEFINE_AUTOPTR_CLEANUP_FUNC(PopplerPage, g_object_unref)
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(PopplerRectangle, poppler_rectangle_free)
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(PopplerPoint, poppler_point_free)
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(PopplerQuadrilateral, poppler_quadrilateral_free)

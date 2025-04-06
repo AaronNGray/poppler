@@ -47,4 +47,6 @@ gint poppler_layer_get_radio_button_group_id(PopplerLayer *layer);
 
 G_END_DECLS
 
+G_DEFINE_AUTOPTR_CLEANUP_FUNC(PopplerLayer, g_object_unref)
+
 #endif /* __POPPLER_LAYER_H__ */

@@ -452,6 +452,18 @@ gboolean poppler_annot_stamp_set_custom_image(PopplerAnnotStamp *poppler_annot, 
 
 G_END_DECLS
 
+G_DEFINE_AUTOPTR_CLEANUP_FUNC(PopplerAnnot, g_object_unref)
+G_DEFINE_AUTOPTR_CLEANUP_FUNC(PopplerAnnotCircle, g_object_unref)
+G_DEFINE_AUTOPTR_CLEANUP_FUNC(PopplerAnnotFileAttachment, g_object_unref)
+G_DEFINE_AUTOPTR_CLEANUP_FUNC(PopplerAnnotFreeText, g_object_unref)
+G_DEFINE_AUTOPTR_CLEANUP_FUNC(PopplerAnnotLine, g_object_unref)
+G_DEFINE_AUTOPTR_CLEANUP_FUNC(PopplerAnnotMarkup, g_object_unref)
+G_DEFINE_AUTOPTR_CLEANUP_FUNC(PopplerAnnotMovie, g_object_unref)
+G_DEFINE_AUTOPTR_CLEANUP_FUNC(PopplerAnnotScreen, g_object_unref)
+G_DEFINE_AUTOPTR_CLEANUP_FUNC(PopplerAnnotSquare, g_object_unref)
+G_DEFINE_AUTOPTR_CLEANUP_FUNC(PopplerAnnotStamp, g_object_unref)
+G_DEFINE_AUTOPTR_CLEANUP_FUNC(PopplerAnnotText, g_object_unref)
+G_DEFINE_AUTOPTR_CLEANUP_FUNC(PopplerAnnotTextMarkup, g_object_unref)
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(PopplerAnnotCalloutLine, poppler_annot_callout_line_free)
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(PopplerFontDescription, poppler_font_description_free)
 
