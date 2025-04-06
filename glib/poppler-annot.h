@@ -452,6 +452,7 @@ gboolean poppler_annot_stamp_set_custom_image(PopplerAnnotStamp *poppler_annot, 
 
 G_END_DECLS
 
+G_DEFINE_AUTOPTR_CLEANUP_FUNC(PopplerAnnotCalloutLine, poppler_annot_callout_line_free)
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(PopplerFontDescription, poppler_font_description_free)
 
 #endif /* __POPPLER_ANNOT_H__ */
