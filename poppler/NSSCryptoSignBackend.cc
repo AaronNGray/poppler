@@ -635,7 +635,13 @@ std::string NSSSignatureConfiguration::sNssDir;
 void NSSSignatureConfiguration::setNSSDir(const GooString &nssDir)
 {
     static std::mutex setNSSMutex;
-    static bool setNssDirCalled = false;
+    static std::atomic<bool> setNssDirCalled = false;
+
+    // In case this is set we can safely just return, instead of wait or more
+    // complex locking.
+    if (setNssDirCalled) {
+        return;
+    }
 
     if (NSS_IsInitialized() && nssDir.getLength() > 0) {
         error(errInternal, 0, "You need to call setNSSDir before signature validation related operations happen");
@@ -644,11 +650,15 @@ void NSSSignatureConfiguration::setNSSDir(const GooString &nssDir)
 
     std::scoped_lock lock(setNSSMutex);
 
+    // Now that we're locked we need to check again, since the previous test
+    // may have passed, but meanwhile another thread flipped the value.
+    // So double check this value again.
     if (setNssDirCalled) {
         return;
     }
 
-    setNssDirCalled = true;
+    // A trick to set the value of setNssDirCalled before returning
+    std::shared_ptr<void> deferred(nullptr, [&](...) { setNssDirCalled = true; });
 
     atexit(shutdownNss);
 
