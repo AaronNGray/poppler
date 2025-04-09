@@ -656,7 +656,7 @@ public:
 
 private:
     void parseInfo();
-    void hashSignedDataBlock(CryptoSign::VerificationInterface *handler, Goffset block_len);
+    void hashSignedDataBlock(CryptoSign::VerificationInterface *handler, Goffset start_offset, Goffset block_len);
 
     CryptoSign::SignatureType signature_type;
     Object byte_range;
