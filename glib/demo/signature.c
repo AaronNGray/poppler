@@ -169,15 +169,21 @@ static void pgd_signature_drawing_area_realize(GtkWidget *area, PgdSignatureDemo
     gtk_widget_add_events(area, GDK_POINTER_MOTION_HINT_MASK | GDK_BUTTON1_MOTION_MASK | GDK_BUTTON_PRESS_MASK | GDK_BUTTON_RELEASE_MASK);
 }
 
-char *password_callback(const char *in)
+char *password_callback(const char *in, gboolean is_retry, gpointer user_data)
 {
+    PgdSignatureDemo *demo = user_data;
+    GtkWidget *window = gtk_widget_get_toplevel(demo->main_box);
     GtkWidget *dialog;
     GtkWidget *box;
     GtkWidget *entry;
     char *ret;
 
-    dialog = gtk_message_dialog_new(NULL, GTK_DIALOG_MODAL, GTK_MESSAGE_QUESTION, GTK_BUTTONS_OK_CANCEL, "Enter password");
-    gtk_message_dialog_format_secondary_text(GTK_MESSAGE_DIALOG(dialog), "Enter password to open: %s", in);
+    dialog = gtk_message_dialog_new(GTK_WINDOW(window), GTK_DIALOG_MODAL, GTK_MESSAGE_QUESTION, GTK_BUTTONS_OK_CANCEL, "Enter password");
+    if (!is_retry) {
+        gtk_message_dialog_format_secondary_text(GTK_MESSAGE_DIALOG(dialog), "Enter password to open: %s", in);
+    } else {
+        gtk_message_dialog_format_secondary_text(GTK_MESSAGE_DIALOG(dialog), "Try again to enter password to open: %s", in);
+    }
     gtk_dialog_set_default_response(GTK_DIALOG(dialog), GTK_RESPONSE_OK);
 
     box = gtk_message_dialog_get_message_area(GTK_MESSAGE_DIALOG(dialog));
@@ -287,7 +293,7 @@ static gboolean pgd_signature_drawing_area_button_release(GtkWidget *area, GdkEv
     pgd_signature_update_cursor(demo, GDK_LAST_CURSOR);
 
     /* poppler_certificate_set_nss_dir ("./glib/demo/cert"); */
-    poppler_set_nss_password_callback(password_callback);
+    poppler_set_nss_password_callback_with_data(password_callback, demo, NULL);
     GList *available_certificates = poppler_get_available_signing_certificates();
 
     if (available_certificates) {
