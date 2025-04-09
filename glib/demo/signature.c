@@ -191,7 +191,7 @@ char *password_callback(const char *in)
     ret = g_strdup(gtk_entry_get_text(GTK_ENTRY(entry)));
     gtk_widget_destroy(dialog);
 
-    return ret;
+    return ret && *ret == '\0' ? NULL : ret;
 }
 
 static void pgd_signature_update_cursor(PgdSignatureDemo *demo, GdkCursorType cursor_type)
