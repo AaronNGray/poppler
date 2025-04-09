@@ -2304,7 +2304,10 @@ char *poppler_get_nss_dir(void)
  * poppler_set_nss_password_callback:
  * @func: (scope forever): a #PopplerNssPasswordFunc that represents a signature annotation
  *
- * A callback which asks for certificate password
+ * A callback which asks for certificate password.
+ *
+ * Since 25.05.0 this is deprecated, use poppler_set_nss_password_callback_with_data()
+ * instead.
  *
  * Since: 23.07.0
  **/

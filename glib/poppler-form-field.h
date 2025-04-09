@@ -377,7 +377,7 @@ POPPLER_PUBLIC
 char *poppler_get_nss_dir(void);
 typedef char *(*PopplerNssPasswordFunc)(const gchar *text);
 POPPLER_PUBLIC
-void poppler_set_nss_password_callback(PopplerNssPasswordFunc func);
+void poppler_set_nss_password_callback(PopplerNssPasswordFunc func) G_DEPRECATED_FOR(poppler_set_nss_password_callback_with_data);
 
 /**
  * PopplerNssPasswordFuncWithData:
