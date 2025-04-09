@@ -2302,7 +2302,7 @@ char *poppler_get_nss_dir(void)
 
 /**
  * poppler_set_nss_password_callback:
- * @func: (scope call): a #PopplerNssPasswordFunc that represents a signature annotation
+ * @func: (scope forever): a #PopplerNssPasswordFunc that represents a signature annotation
  *
  * A callback which asks for certificate password
  *
