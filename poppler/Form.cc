@@ -2387,6 +2387,11 @@ SignatureInfo *FormFieldSignature::validateSignatureAsync(bool doVerifyCert, boo
         return signature_info;
     }
 
+    // We need to ensure that other threads won't change the doc stream while
+    // we're going through it, so protect the stream via a mutex so that only
+    // one thread can modify the doc stream while we're at it.
+    static std::mutex streamMutex;
+
     Goffset fileLength = doc->getBaseStream()->getLength();
     for (int i = 0; i < arrayLen / 2; i++) {
         Object offsetObj = byte_range.arrayGet(i * 2);
@@ -2411,8 +2416,10 @@ SignatureInfo *FormFieldSignature::validateSignatureAsync(bool doVerifyCert, boo
             return signature_info;
         }
 
+        streamMutex.lock();
         doc->getBaseStream()->setPos(offset);
         hashSignedDataBlock(signature_handler.get(), len);
+        streamMutex.unlock();
     }
 
     if (!signature_info->isSubfilterSupported()) {
