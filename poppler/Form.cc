@@ -2306,9 +2306,6 @@ void FormFieldSignature::parseInfo()
 
 void FormFieldSignature::hashSignedDataBlock(CryptoSign::VerificationInterface *handler, Goffset block_len)
 {
-    if (!handler) {
-        return;
-    }
     const int BLOCK_SIZE = 4096;
     unsigned char signed_data_buffer[BLOCK_SIZE];
 
