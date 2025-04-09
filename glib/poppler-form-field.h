@@ -379,6 +379,55 @@ typedef char *(*PopplerNssPasswordFunc)(const gchar *text);
 POPPLER_PUBLIC
 void poppler_set_nss_password_callback(PopplerNssPasswordFunc func);
 
+/**
+ * PopplerNssPasswordFuncWithData:
+ * @text: The text that the function is expected to prompt.
+ * @is_retry: Whether this is a password request retry
+ * @user_data: (nullable) (transfer none): User provided data
+ * Returns: (nullable) (transfer full): The provided password or %NULL to cancel
+ *   the password request.
+ *
+ * Called when the NSS backend requires a certificate or database password or
+ * PIN.
+ *
+ * Note that the callback is called in the same thread in which
+ * poppler_get_available_signing_certificates() is called and is expected to
+ * return the password value synchronously.
+ * As per this it may be required to iterate the main loop until a value is
+ * provided by the user as this code shows:
+ * |[
+ *  GtkWidget *password_entry;
+ *  GtkEntryBuffer *buffer;
+ *  AdwDialog *dialog;
+ *
+ *  dialog = adw_alert_dialog_new ("NSS Password", NULL);
+ *  adw_dialog_set_can_close (dialog, TRUE);
+ *  adw_alert_dialog_set_body (ADW_ALERT_DIALOG (dialog), text);
+ *
+ *  adw_alert_dialog_add_response (ADW_ALERT_DIALOG (dialog), "unlock", "Unlock");
+ *  adw_alert_dialog_set_default_response (ADW_ALERT_DIALOG (dialog), "unlock");
+ *  adw_alert_dialog_set_response_appearance (ADW_ALERT_DIALOG (dialog), "unlock",
+ *                                            ADW_RESPONSE_SUGGESTED);
+ *
+ *  password_entry = gtk_entry_new ();
+ *  gtk_entry_set_visibility (GTK_ENTRY (password_entry), FALSE);
+ *  adw_alert_dialog_set_extra_child (ADW_ALERT_DIALOG (dialog), password_entry);
+ *
+ *  adw_dialog_present (dialog, GTK_WIDGET (self));
+ *  g_signal_connect_swapped (dialog, "closed",
+ *                            G_CALLBACK (g_nullify_pointer), &dialog);
+ *
+ *  while (dialog != NULL)
+ *    g_main_context_iteration (NULL, FALSE);
+ *
+ *  buffer = gtk_entry_get_buffer (GTK_ENTRY (password_entry));
+ *  return g_strdup (gtk_entry_buffer_get_text (buffer));
+ * ]|
+ */
+typedef char *(*PopplerNssPasswordFuncWithData)(const gchar *text, gboolean is_retry, gpointer user_data);
+POPPLER_PUBLIC
+void poppler_set_nss_password_callback_with_data(PopplerNssPasswordFuncWithData func, gpointer user_data, GDestroyNotify user_data_destroy);
+
 G_END_DECLS
 
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(PopplerSignatureInfo, poppler_signature_info_free)

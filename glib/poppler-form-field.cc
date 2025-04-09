@@ -2310,8 +2310,27 @@ char *poppler_get_nss_dir(void)
  **/
 void poppler_set_nss_password_callback(PopplerNssPasswordFunc func)
 {
+    poppler_set_nss_password_callback_with_data([](const char *slot_name, gboolean, gpointer data) { return reinterpret_cast<PopplerNssPasswordFunc>(data)(slot_name); }, reinterpret_cast<gpointer>(func), nullptr);
+}
+
+/**
+ * poppler_set_nss_password_callback_with_data:
+ * @func: (scope notified): a #PopplerNssPasswordFunc that represents a signature annotation
+ * @user_data: The user data to call the callback with.
+ *
+ * Sets a #PopplerNssPasswordFunc callback which should ask for certificate
+ * password and return it.
+ *
+ * Note that this is a synchronous request, see the #PopplerNssPasswordFunc
+ * documentation for more information.
+ *
+ * Since: 25.05.0
+ **/
+void poppler_set_nss_password_callback_with_data(PopplerNssPasswordFuncWithData func, gpointer user_data, GDestroyNotify user_data_destroy)
+{
 #ifdef ENABLE_NSS3
-    NSSSignatureConfiguration::setNSSPasswordCallback(func);
+    auto f = [func](const char *slot_name, bool is_retry, void *data) { return func(slot_name, is_retry != false, data); };
+    NSSSignatureConfiguration::setNSSPasswordCallbackWithData(f, user_data, user_data_destroy);
 #else
     g_warning("poppler_set_nss_password_callback called but this poppler is built without NSS support");
     (void)func;
