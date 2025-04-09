@@ -2310,26 +2310,27 @@ void FormFieldSignature::hashSignedDataBlock(CryptoSign::VerificationInterface *
     unsigned char signed_data_buffer[BLOCK_SIZE];
 
     // We need to ensure that other threads won't change the doc stream while
-    // we're going through it, so protect the stream via a mutex so that only
-    // one thread can modify the doc stream while we're at it.
-    static std::mutex streamMutex;
+    // we're going through it, so protect the stream by getting the locked
+    // stream item.
 
     Goffset i = 0;
     while (i < block_len) {
         Goffset bytes_left = block_len - i;
         if (bytes_left < BLOCK_SIZE) {
-            streamMutex.lock();
-            doc->getBaseStream()->setPos(start_offset + i);
-            doc->getBaseStream()->doGetChars(static_cast<int>(bytes_left), signed_data_buffer);
-            streamMutex.unlock();
+            {
+                auto locked_stream = doc->getBaseStream()->locked();
+                locked_stream->setPos(start_offset + i);
+                locked_stream->doGetChars(static_cast<int>(bytes_left), signed_data_buffer);
+            }
 
             handler->addData(signed_data_buffer, static_cast<int>(bytes_left));
             i = block_len;
         } else {
-            streamMutex.lock();
-            doc->getBaseStream()->setPos(start_offset + i);
-            doc->getBaseStream()->doGetChars(BLOCK_SIZE, signed_data_buffer);
-            streamMutex.unlock();
+            {
+                auto locked_stream = doc->getBaseStream()->locked();
+                locked_stream->getBaseStream()->setPos(start_offset + i);
+                locked_stream->getBaseStream()->doGetChars(BLOCK_SIZE, signed_data_buffer);
+            }
 
             handler->addData(signed_data_buffer, BLOCK_SIZE);
             i += BLOCK_SIZE;
