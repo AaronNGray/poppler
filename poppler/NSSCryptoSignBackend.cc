@@ -634,12 +634,15 @@ std::string NSSSignatureConfiguration::sNssDir;
  */
 void NSSSignatureConfiguration::setNSSDir(const GooString &nssDir)
 {
+    static std::mutex setNSSMutex;
     static bool setNssDirCalled = false;
 
     if (NSS_IsInitialized() && nssDir.getLength() > 0) {
         error(errInternal, 0, "You need to call setNSSDir before signature validation related operations happen");
         return;
     }
+
+    std::scoped_lock lock(setNSSMutex);
 
     if (setNssDirCalled) {
         return;
