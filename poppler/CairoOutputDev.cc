@@ -2960,6 +2960,11 @@ private:
         cairo_surface_t *image = nullptr;
         int i;
         int destWidth, destHeight;
+        unsigned char *buffer;
+        unsigned char *maskBuffer;
+        unsigned char *maskDest;
+        ptrdiff_t stride;
+        ptrdiff_t mask_row_stride;
 
         lookup = nullptr;
         colorMap = colorMapA;
@@ -2990,6 +2995,11 @@ private:
             if (cairo_surface_status(SMaskImage)) {
                 return image;
             }
+        }
+
+        if (matteColorRgbA != nullptr) {
+            maskBuffer = cairo_image_surface_get_data(SMaskImage);
+            mask_row_stride = cairo_image_surface_get_stride(SMaskImage);
         }
 
         /* TODO: Do we want to cache these? */
@@ -3056,8 +3066,6 @@ private:
 
         if (!needsCustomDownscaling || scaledWidth >= width || scaledHeight >= height) {
             // No downscaling. Create cairo image containing the source image data.
-            unsigned char *buffer;
-            ptrdiff_t stride;
             // 0-indexed column range to pass to getRowA8()
             unsigned short int startColumn0 = 0;
             unsigned short int endColumn0 = width - 1; // initialize to full width
@@ -3101,6 +3109,10 @@ private:
                         memcpy(dest, full_row + startColumn0, destWidth);
                     } else {
                         getRow(y, dest);
+                    }
+                    if (matteColorRgbA != nullptr) {
+                        maskDest = (unsigned char *)(maskBuffer + y * mask_row_stride);
+                        applyMask(dest, destWidth, *matteColorRgb, maskDest);
                     }
                 }
             }
@@ -3164,6 +3176,16 @@ private:
                 }
                 // downScaleImage() requires start_column and start_row to be provided 0-indexed and according to destination dimensions
                 downScaleImage(width, height, scaledWidth, scaledHeight, startColumnScaled0, startRowScaled0, destWidth, destHeight, image);
+                if (matteColorRgbA != nullptr && destWidth == cairo_image_surface_get_width(SMaskImage) && destHeight == cairo_image_surface_get_height(SMaskImage)) {
+                    unsigned int *dest;
+                    buffer = cairo_image_surface_get_data(image);
+                    stride = cairo_image_surface_get_stride(image);
+                    for (int y = 0; y < destHeight; y++) {
+                        dest = reinterpret_cast<unsigned int *>(buffer + y * stride);
+                        maskDest = (unsigned char *)(maskBuffer + y * mask_row_stride);
+                        applyMask(dest, destWidth, *matteColorRgb, maskDest);
+                    }
+                }
             }
         }
         cairo_surface_mark_dirty(image);
