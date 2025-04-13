@@ -86,7 +86,10 @@
 #define MAX_PRINT_IMAGE_SIZE 8192
 // Cairo has a max size for image surfaces due to their fixed-point
 // coordinate handling, namely INT16_MAX, aka 32767.
-#define MAX_CAIRO_IMAGE_SIZE 32767
+// But we set it to 32766 because Cairo fails when doing a cairo_mask() with
+// a 32767 mask image over another image of also 32767 but this case works ok when
+// both images are 32766. Such cairo_mask() case may happen in drawSoftMaskedImage()
+#define MAX_CAIRO_IMAGE_SIZE 32766
 
 #ifdef LOG_CAIRO
 #    define LOG(x) (x)
@@ -3090,6 +3093,24 @@ private:
                     full_row = (uint32_t *)gmallocn(width, sizeof(uint32_t));
                 }
             }
+
+            if (destHeight > MAX_CAIRO_IMAGE_SIZE) {
+                error(errInternal, -1, "Reducing image height from {0:d} to {1:d} because of Cairo limits", destHeight, MAX_CAIRO_IMAGE_SIZE);
+                destHeight = MAX_CAIRO_IMAGE_SIZE;
+                endY = MIN(endY, destHeight);
+            }
+
+            if (destWidth > MAX_CAIRO_IMAGE_SIZE) {
+                error(errInternal, -1, "Reducing image width from {0:d} to {1:d} because of Cairo limits", destWidth, MAX_CAIRO_IMAGE_SIZE);
+                destWidth = MAX_CAIRO_IMAGE_SIZE;
+                startColumn0 = 0;
+                endColumn0 = destWidth - 1;
+                if (!softMask && !useGetRowColumnFix) {
+                    useGetRowColumnFix = true;
+                    full_row = (uint32_t *)gmallocn(width, sizeof(uint32_t));
+                }
+            }
+
             image = cairo_image_surface_create(imageFormat, destWidth, destHeight);
             if (cairo_surface_status(image)) {
                 gfree(full_row);
@@ -3161,6 +3182,18 @@ private:
                 }
                 destWidth = (endColumnScaled - startColumnScaled) + 1;
                 startColumnScaled0 = startColumnScaled - 1;
+            }
+
+            if (destHeight > MAX_CAIRO_IMAGE_SIZE) {
+                error(errInternal, -1, "Reducing image height from {0:d} to {1:d} because of Cairo limits", destHeight, MAX_CAIRO_IMAGE_SIZE);
+                destHeight = MAX_CAIRO_IMAGE_SIZE;
+                endRow = MIN(endRow, destHeight);
+            }
+
+            if (destWidth > MAX_CAIRO_IMAGE_SIZE) {
+                error(errInternal, -1, "Reducing image width from {0:d} to {1:d} because of Cairo limits", destWidth, MAX_CAIRO_IMAGE_SIZE);
+                destWidth = MAX_CAIRO_IMAGE_SIZE;
+                endColumn = MIN(endColumn, destWidth);
             }
 
             if (softMask) {
@@ -3399,17 +3432,6 @@ void CairoOutputDev::drawSoftMaskedImage(GfxState *state, Object *ref, Stream *s
         scaledNumCols = (endColScaled - startColScaled) + 1;
     }
 
-    // Clamp heights to what Cairo can handle - Issue #991
-    if (height >= MAX_CAIRO_IMAGE_SIZE && (!usesVerticalOffset || ((endRow - startRow) + 1 >= MAX_CAIRO_IMAGE_SIZE))) {
-        error(errInternal, -1, "Reducing image height from {0:d} to {1:d} because of Cairo limits", height, MAX_CAIRO_IMAGE_SIZE - 1);
-        height = MAX_CAIRO_IMAGE_SIZE - 1;
-    }
-
-    if (maskHeight >= MAX_CAIRO_IMAGE_SIZE && (!usesVerticalOffset || ((endRow - startRow) + 1 >= MAX_CAIRO_IMAGE_SIZE))) {
-        error(errInternal, -1, "Reducing maskImage height from {0:d} to {1:d} because of Cairo limits", maskHeight, MAX_CAIRO_IMAGE_SIZE - 1);
-        maskHeight = MAX_CAIRO_IMAGE_SIZE - 1;
-    }
-
     const GfxColor *matteColor = maskColorMap->getMatteColor();
     if (matteColor != nullptr) {
         getMatteColorRgb(colorMap, matteColor, &matteColorRgb);
@@ -3431,6 +3453,21 @@ void CairoOutputDev::drawSoftMaskedImage(GfxState *state, Object *ref, Stream *s
         image = rescale.getSourceImageWithMatte(str, width, height, scaledWidth, scaledHeight, printing, colorMap, &matteColorRgb, maskImage, startRow, endRow, startCol, endCol, &usedDownscaling);
     } else {
         image = rescale.getSourceImage(str, width, height, scaledWidth, scaledHeight, printing, colorMap, nullptr, startRow, endRow, startCol, endCol, &usedDownscaling);
+    }
+
+    // Clamp to Cairo limits - we do it after calling Rescale because Rescale may use real height eg. for downscaling case
+    if (!usesVerticalOffset) {
+        if (usedDownscaling) {
+            scaledHeight = MIN(scaledHeight, MAX_CAIRO_IMAGE_SIZE);
+            scaledWidth = MIN(scaledWidth, MAX_CAIRO_IMAGE_SIZE);
+        } else {
+            height = MIN(height, MAX_CAIRO_IMAGE_SIZE);
+            width = MIN(width, MAX_CAIRO_IMAGE_SIZE);
+        }
+        if (!usedDownscalingMask) {
+            maskHeight = MIN(maskHeight, MAX_CAIRO_IMAGE_SIZE);
+            maskWidth = MIN(maskWidth, MAX_CAIRO_IMAGE_SIZE);
+        }
     }
 
     int maskHeightNew = cairo_image_surface_get_height(maskImage);
@@ -4072,9 +4109,9 @@ void CairoImageOutputDev::drawSoftMaskedImage(GfxState *state, Object *ref, Stre
         if (hasVerticalOffset(state, originalHeight, &startRow, &endRow)) {
             height = (endRow - startRow) + 1;
         }
-        if (height >= MAX_CAIRO_IMAGE_SIZE) {
-            error(errInternal, -1, "Reducing image height from {0:d} to {1:d} because of Cairo limits", height, MAX_CAIRO_IMAGE_SIZE - 1);
-            height = MAX_CAIRO_IMAGE_SIZE - 1;
+        if (height > MAX_CAIRO_IMAGE_SIZE) {
+            error(errInternal, -1, "Reducing image height from {0:d} to {1:d} because of Cairo limits", height, MAX_CAIRO_IMAGE_SIZE);
+            height = MAX_CAIRO_IMAGE_SIZE;
         }
         surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, width, height);
         cr = cairo_create(surface);
