@@ -73,17 +73,21 @@ using void_t = typename void_type<Args...>::type;
 template<typename Stat, typename = void_t<>>
 struct StatMtim
 {
-    static const struct timespec &value(const Stat &stbuf) { return stbuf.st_mtim; }
+    // We reference as each field because AIX defines st_mtim not as timespec,
+    // but a custom structurre that has int nanoseconds. This, we can't pass a
+    // reference to the field, nor can we use it directly, so we just create a
+    // new structure with its fields and copy that.
+    static const struct timespec value(const Stat &stbuf) { return { stbuf.st_mtim.tv_sec, stbuf.st_mtim.tv_nsec }; }
 };
 
 // Mac OS X uses a different field name than POSIX and this detects it.
 template<typename Stat>
 struct StatMtim<Stat, void_t<decltype(Stat::st_mtimespec)>>
 {
-    static const struct timespec &value(const Stat &stbuf) { return stbuf.st_mtimespec; }
+    static const struct timespec value(const Stat &stbuf) { return stbuf.st_mtimespec; }
 };
 
-inline const struct timespec &mtim(const struct stat &stbuf)
+inline const struct timespec mtim(const struct stat &stbuf)
 {
     return StatMtim<struct stat>::value(stbuf);
 }
