@@ -95,11 +95,13 @@ build_mingw64_fedora41:
   before_script:
     - dnf install -y 'dnf-command(builddep)'
     - dnf builddep -y mingw64-poppler
-    - dnf -y install glibc-langpack-en make ninja-build mingw64-boost mingw64-curl mingw64-qt6-qtbase mingw64-gcc-c++ cmake-rpm-macros
+    - dnf -y install glibc-langpack-en make ninja-build mingw64-boost mingw64-curl mingw64-qt6-qtbase mingw64-gcc-c++ cmake-rpm-macros 
+    - dnf -y install wine
   script:
     - mkdir -p build && cd build
-    - mingw64-cmake -DENABLE_NSS3=OFF -DENABLE_GPGME=OFF -G Ninja ..
+    - mingw64-cmake -DENABLE_NSS3=OFF -DENABLE_GPGME=OFF -DCMAKE_CROSSCOMPILING_EMULATOR=wine -G Ninja ..
     - ninja
+    - ctest -V
 
 build_clazy_fedora41:
   stage: build
