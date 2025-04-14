@@ -140,9 +140,10 @@ class PdfInfo
 
 public:
     void add(const std::string &key, const std::string &value);
+    void add(const std::string &key, const char *value) { add(key, std::string { value }); }
     void add(const std::string &key, const GooString *value) { add(key, value->toStr()); }
     void add(const std::string &key, const int &value) { add(key, std::to_string(value)); }
-    // void add(const std::string& key, const bool& value) { add(key, std::string{value ? "yes" : "no"}); }
+    void add(const std::string &key, const bool &value) { add(key, std::string { value ? "yes" : "no" }); }
     void addKey(const Object &info, const char *key, const std::string &text);
     void addKey(const Object &info, const char *key) { addKey(info, key, key); }
     template<class Transform>
@@ -158,7 +159,7 @@ public:
 
 void PdfInfo::add(const std::string &key, const std::string &value)
 {
-    content.emplace_back(std::format("{:16} ", key + ':'), value);
+    content.emplace_back(key, value);
 }
 
 template<class Transform>
@@ -181,20 +182,19 @@ void PdfInfo::addKey(const Object &info, const char *key, const std::string &tex
 void PdfInfo::print() const
 {
     for (const auto &[key, value] : content) {
-        std::cout << key << value << std::endl;
+        std::cout << std::format("{:16} ", key + ':') << value << std::endl;
     }
 }
 
 void PdfInfo::print(const UnicodeMap *uMap) const
 {
     for (const auto &[key, value] : content) {
-        std::cout << key;
+        std::cout << std::format("{:16} ", key + ':');
         printStdTextString(value, uMap);
         std::cout << std::endl;
     }
 }
 
-// XXX: Instead record text→value with value = infoDict->lookup(key).getString()
 static void printInfoString(Dict *infoDict, const char *key, const char *text, const UnicodeMap *uMap)
 {
     const GooString *s1;
@@ -838,13 +838,13 @@ static void printInfo(PDFDoc *doc, const UnicodeMap *uMap, long long filesize, b
     }
 
     // print metadata info
-    o.add("Custom Metadata", hasCustom ? "yes" : "no");
-    o.add("Metadata Stream", hasMetadata ? "yes" : "no");
+    o.add("Custom Metadata", hasCustom);
+    o.add("Metadata Stream", hasMetadata);
 
     // print tagging info
-    o.add("Tagged", (doc->getCatalog()->getMarkInfo() & Catalog::markInfoMarked) ? "yes" : "no");
-    o.add("UserProperties", (doc->getCatalog()->getMarkInfo() & Catalog::markInfoUserProperties) ? "yes" : "no");
-    o.add("Suspects", (doc->getCatalog()->getMarkInfo() & Catalog::markInfoSuspects) ? "yes" : "no");
+    o.add("Tagged", static_cast<bool>(doc->getCatalog()->getMarkInfo() & Catalog::markInfoMarked));
+    o.add("UserProperties", static_cast<bool>(doc->getCatalog()->getMarkInfo() & Catalog::markInfoUserProperties));
+    o.add("Suspects", static_cast<bool>(doc->getCatalog()->getMarkInfo() & Catalog::markInfoSuspects));
 
     // print form info
     switch (doc->getCatalog()->getFormType()) {
@@ -863,7 +863,7 @@ static void printInfo(PDFDoc *doc, const UnicodeMap *uMap, long long filesize, b
     {
         JSInfo jsInfo(doc, firstPage - 1);
         jsInfo.scanJS(lastPage - firstPage + 1);
-        o.add("JavaScript", jsInfo.containsJS() ? "yes" : "no");
+        o.add("JavaScript", jsInfo.containsJS());
     }
 
     // print page count
@@ -964,7 +964,7 @@ static void printInfo(PDFDoc *doc, const UnicodeMap *uMap, long long filesize, b
     o.add("File size", std::format("{} bytes", filesize));
 
     // print linearization info
-    o.add("Optimized", doc->isLinearized() ? "yes" : "no");
+    o.add("Optimized", doc->isLinearized());
 
     // print PDF version
     o.add("PDF version", std::format("{}.{}", doc->getPDFMajorVersion(), doc->getPDFMinorVersion()));
