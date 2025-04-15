@@ -1002,8 +1002,8 @@ void QPainterOutputDev::drawImageMask(GfxState *state, Object *ref, Stream *str,
 // TODO: lots more work here.
 void QPainterOutputDev::drawImage(GfxState *state, Object *ref, Stream *str, int width, int height, GfxImageColorMap *colorMap, bool interpolate, const int *maskColors, bool inlineImg)
 {
-    unsigned int *data;
-    unsigned int *line;
+    unsigned char *data;
+    unsigned char *line;
     int x, y;
     unsigned char *pix;
     int i;
@@ -1017,31 +1017,26 @@ void QPainterOutputDev::drawImage(GfxState *state, Object *ref, Stream *str, int
         return;
     }
 
-    image = QImage(width, height, QImage::Format_ARGB32);
-    data = reinterpret_cast<unsigned int *>(image.bits());
-    stride = image.bytesPerLine() / 4;
+    image = QImage(width, height, QImage::Format_RGBA8888);
+    data = image.bits();
+    stride = image.bytesPerLine();
     for (y = 0; y < height; y++) {
         pix = imgStr->getLine();
         // Invert the vertical coordinate: y is increasing from top to bottom
         // on the page, but y is increasing bottom to top in the picture.
         line = data + (height - 1 - y) * stride;
-        colorMap->getRGBLine(pix, line, width);
+        colorMap->getRGBXLine(pix, line, width);
 
         if (maskColors) {
             for (x = 0; x < width; x++) {
                 for (i = 0; i < colorMap->getNumPixelComps(); ++i) {
                     if (pix[i] < maskColors[2 * i] * 255 || pix[i] > maskColors[2 * i + 1] * 255) {
-                        *line = *line | 0xff000000;
+                        line[3] = 0xff;
                         break;
                     }
                 }
                 pix += colorMap->getNumPixelComps();
-                line++;
-            }
-        } else {
-            for (x = 0; x < width; x++) {
-                *line = *line | 0xff000000;
-                line++;
+                line += 4;
             }
         }
     }
