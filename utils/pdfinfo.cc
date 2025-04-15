@@ -75,6 +75,7 @@
 
 static int firstPage = 1;
 static int lastPage = 0;
+static bool jsonOutput = false;
 static bool printBoxes = false;
 static bool printMetadata = false;
 static bool printCustom = false;
@@ -97,6 +98,7 @@ static const ArgDesc argDesc[] = { { "-f", argInt, &firstPage, 0, "first page to
                                    { "-box", argFlag, &printBoxes, 0, "print the page bounding boxes" },
                                    { "-meta", argFlag, &printMetadata, 0, "print the document metadata (XML)" },
                                    { "-custom", argFlag, &printCustom, 0, "print both custom and standard metadata" },
+                                   { "-json", argFlag, &jsonOutput, 0, "output as JSON" },
                                    { "-js", argFlag, &printJS, 0, "print all JavaScript in the PDF" },
                                    { "-struct", argFlag, &printStructure, 0, "print the logical document structure (for tagged files)" },
                                    { "-struct-text", argFlag, &printStructureText, 0, "print text contents along with document structure (for tagged files)" },
@@ -155,6 +157,7 @@ public:
     }
     void print() const;
     void print(const UnicodeMap *uMap) const;
+    void printJson() const;
 };
 
 void PdfInfo::add(const std::string &key, const std::string &value)
@@ -193,6 +196,16 @@ void PdfInfo::print(const UnicodeMap *uMap) const
         printStdTextString(value, uMap);
         std::cout << std::endl;
     }
+}
+
+// TODO: This is a prototype only
+void PdfInfo::printJson() const
+{
+    std::cout << '{' << std::endl;
+    for (const auto &[key, value] : content) {
+        std::cout << '"' << key << "\": \"" << value << "\"," << std::endl;
+    }
+    std::cout << '}' << std::endl;
 }
 
 static void printInfoString(Dict *infoDict, const char *key, const char *text, const UnicodeMap *uMap)
@@ -788,7 +801,7 @@ static void printCustomInfo(PDFDoc *doc, const UnicodeMap *uMap)
     }
 }
 
-static void printInfo(PDFDoc *doc, const UnicodeMap *uMap, long long filesize, bool multiPage)
+static void printInfo(PDFDoc *doc, const UnicodeMap *uMap, long long filesize, std::string (*formatDate)(const GooString *), bool multiPage, bool asJson)
 {
     PdfInfo o;
     Page *page;
@@ -805,16 +818,8 @@ static void printInfo(PDFDoc *doc, const UnicodeMap *uMap, long long filesize, b
         o.addKey(info, "Author");
         o.addKey(info, "Creator");
         o.addKey(info, "Producer");
-        if (isoDates) {
-            o.addTransformedKey(info, "CreationDate", formatISODate);
-            o.addTransformedKey(info, "ModDate", formatISODate);
-        } else if (rawDates) {
-            o.addKey(info, "CreationDate");
-            o.addKey(info, "ModDate");
-        } else {
-            o.addTransformedKey(info, "CreationDate", formatInfoDate);
-            o.addTransformedKey(info, "ModDate", formatInfoDate);
-        }
+        o.addTransformedKey(info, "CreationDate", formatDate);
+        o.addTransformedKey(info, "ModDate", formatDate);
     }
 
     bool hasMetadata = false;
@@ -969,7 +974,10 @@ static void printInfo(PDFDoc *doc, const UnicodeMap *uMap, long long filesize, b
     // print PDF version
     o.add("PDF version", std::format("{}.{}", doc->getPDFMajorVersion(), doc->getPDFMinorVersion()));
 
-    o.print(uMap);
+    if (asJson)
+        o.printJson();
+    else
+        o.print(uMap);
 
     printPdfSubtype(doc, uMap);
 }
@@ -979,6 +987,7 @@ int main(int argc, char *argv[])
     std::unique_ptr<PDFDoc> doc;
     GooString *fileName;
     std::optional<GooString> ownerPW, userPW;
+    std::string (*formatDate)(const GooString *);
     const UnicodeMap *uMap;
     FILE *f;
     bool ok;
@@ -1017,6 +1026,8 @@ int main(int argc, char *argv[])
     }
 
     fileName = new GooString(argv[1]);
+
+    formatDate = rawDates ? [](const GooString *s) { return s->toStr(); } : (jsonOutput || isoDates) ? formatISODate : formatInfoDate;
 
     if (textEncName[0]) {
         globalParams->setTextEncoding(textEncName);
@@ -1106,7 +1117,7 @@ int main(int argc, char *argv[])
             lastPage = 1;
         }
 
-        printInfo(doc.get(), uMap, filesize, multiPage);
+        printInfo(doc.get(), uMap, filesize, formatDate, multiPage, jsonOutput);
     }
     exitCode = 0;
 
