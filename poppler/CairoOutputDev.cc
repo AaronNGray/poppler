@@ -2959,6 +2959,7 @@ private:
     {
         cairo_surface_t *image = nullptr;
         int i;
+        int destWidth, destHeight;
 
         lookup = nullptr;
         colorMap = colorMapA;
@@ -3022,16 +3023,25 @@ private:
             }
         }
 
-        bool needsCustomDownscaling = (width > MAX_CAIRO_IMAGE_SIZE || height > MAX_CAIRO_IMAGE_SIZE);
+        destWidth = width;
+        destHeight = height;
+        if (startRow && startRow <= endRow) {
+            destHeight = (endRow - startRow) + 1;
+        }
+        if (startColumn && startColumn <= endColumn) {
+            destWidth = (endColumn - startColumn) + 1;
+        }
+
+        bool needsCustomDownscaling = (destWidth > MAX_CAIRO_IMAGE_SIZE || destHeight > MAX_CAIRO_IMAGE_SIZE);
 
         if (printing) {
-            if (width > MAX_PRINT_IMAGE_SIZE || height > MAX_PRINT_IMAGE_SIZE) {
-                if (width > height) {
+            if (destWidth > MAX_PRINT_IMAGE_SIZE || destHeight > MAX_PRINT_IMAGE_SIZE) {
+                if (destWidth > destHeight) {
                     scaledWidth = MAX_PRINT_IMAGE_SIZE;
-                    scaledHeight = MAX_PRINT_IMAGE_SIZE * (double)height / width;
+                    scaledHeight = MAX_PRINT_IMAGE_SIZE * (double)destHeight / destWidth;
                 } else {
                     scaledHeight = MAX_PRINT_IMAGE_SIZE;
-                    scaledWidth = MAX_PRINT_IMAGE_SIZE * (double)width / height;
+                    scaledWidth = MAX_PRINT_IMAGE_SIZE * (double)destWidth / destHeight;
                 }
                 needsCustomDownscaling = true;
 
@@ -3048,8 +3058,6 @@ private:
             // No downscaling. Create cairo image containing the source image data.
             unsigned char *buffer;
             ptrdiff_t stride;
-            int destHeight = height;
-            int destWidth = width;
             // 0-indexed column range to pass to getRowA8()
             unsigned short int startColumn0 = 0;
             unsigned short int endColumn0 = width - 1; // initialize to full width
@@ -3061,12 +3069,10 @@ private:
                 *neededDownscale = false;
             }
             if (startRow && startRow <= endRow) {
-                destHeight = (endRow - startRow) + 1;
                 startY = startRow - 1;
                 endY = endRow;
             }
             if (startColumn && startColumn <= endColumn) {
-                destWidth = (endColumn - startColumn) + 1;
                 startColumn0 = startColumn - 1;
                 endColumn0 = endColumn - 1;
                 if (!softMask) {
@@ -3108,8 +3114,8 @@ private:
             // exceed cairo's 32767x32767 image size limit (and also saves a
             // lot of memory).
 
-            int destWidth = scaledWidth;
-            int destHeight = scaledHeight;
+            destWidth = scaledWidth;
+            destHeight = scaledHeight;
 
             if (neededDownscale) {
                 *neededDownscale = true;
