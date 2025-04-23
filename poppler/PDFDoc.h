@@ -353,6 +353,11 @@ public:
                                                  double leftFontSize, std::unique_ptr<AnnotColor> &&fontColor, double borderWidth, std::unique_ptr<AnnotColor> &&borderColor, std::unique_ptr<AnnotColor> &&backgroundColor,
                                                  const std::string &imagePath);
 
+    std::map<Ref, Ref> insertPage(Page *page, int num);
+    std::map<Ref, Ref> insertPage(Page *page, int num, std::optional<std::map<Ref, Ref>> &refMap);
+    void removePage(Page *page);
+    Page *insertBlankPage(int num);
+
 private:
     // insert referenced objects in XRef
     bool markDictionary(Dict *dict, XRef *xRef, XRef *countRef, unsigned int numOffset, int oldRefNum, int newRefNum, std::set<Dict *> *alreadyMarkedDicts);
@@ -391,6 +396,9 @@ private:
     void checkHeader();
     bool checkEncryption(const std::optional<GooString> &ownerPassword, const std::optional<GooString> &userPassword);
     void extractPDFSubtype();
+
+    // Remove linearization
+    void resetLinearization();
 
     // Get the offset of the start xref table.
     Goffset getStartXRef(bool tryingToReconstruct = false);

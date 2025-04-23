@@ -81,6 +81,7 @@ set(poppler_glib_SRCS
   poppler-cached-file-loader.cc
   poppler-input-stream.cc
   poppler-structure-element.cc
+  poppler-output-stream.cc
 )
 set(poppler_glib_generated_SRCS
   ${CMAKE_CURRENT_BINARY_DIR}/poppler-enums.c

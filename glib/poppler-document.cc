@@ -64,6 +64,7 @@
 #include "poppler-private.h"
 #include "poppler-enums.h"
 #include "poppler-input-stream.h"
+#include "poppler-output-stream.h"
 #include "poppler-cached-file-loader.h"
 
 #ifdef G_OS_WIN32
@@ -583,6 +584,17 @@ gboolean poppler_document_save(PopplerDocument *document, const char *uri, GErro
     return retval;
 }
 
+gboolean poppler_document_save_outstream(PopplerDocument *document, GOutputStream *stream, GCancellable *cancellable, GError **error)
+{
+    g_return_val_if_fail(POPPLER_IS_DOCUMENT(document), FALSE);
+
+    GLibOutStream outStr = GLibOutStream(stream, cancellable, error);
+
+    document->doc->saveAs(&outStr);
+    outStr.flush();
+    return TRUE;
+}
+
 /**
  * poppler_document_save_a_copy:
  * @document: a #PopplerDocument
@@ -796,6 +808,38 @@ PopplerPage *poppler_document_get_page_by_label(PopplerDocument *document, const
     }
 
     return poppler_document_get_page(document, index);
+}
+
+void poppler_document_remove_page(PopplerDocument *document, int index)
+{
+    document->doc->removePage(document->doc->getPage(index + 1));
+}
+
+/**
+ * poppler_document_insert_page:
+ * @document: A #PopplerDocument
+ * @page: a page
+ * @index: where the page is going to be inserted (@page will be page number
+ * @index)
+ *
+ * Copy @page and insert it in @document. @page can be a page of @document or
+ * come from another #PopplerDocument.
+ **/
+void poppler_document_insert_page(PopplerDocument *document, PopplerPage *page, int index)
+{
+    document->doc->insertPage(page->page, index + 1);
+}
+
+/**
+ * poppler_document_insert_blank_page:
+ * @document: A #PopplerDocument
+ * @index: where the page is going to be inserted (@page will be page number
+ * @index)
+ *
+ **/
+void poppler_document_insert_blank_page(PopplerDocument *document, int index)
+{
+    document->doc->insertBlankPage(index + 1);
 }
 
 /**

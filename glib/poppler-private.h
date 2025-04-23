@@ -65,7 +65,6 @@ struct _PopplerPage
     GObject parent_instance;
     PopplerDocument *document;
     Page *page;
-    int index;
     TextPage *text;
 };
 

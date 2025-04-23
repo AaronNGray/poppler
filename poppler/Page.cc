@@ -815,3 +815,15 @@ std::unique_ptr<LinkAction> Page::getAdditionalAction(PageAdditionalActionsType 
 
     return nullptr;
 }
+
+void Page::changeNum(int newNum)
+{
+    num = newNum;
+    if (!annots) {
+        return;
+    }
+
+    for (Annot *annot : annots->getAnnots()) {
+        annot->page = newNum;
+    }
+}

@@ -46,6 +46,7 @@
 #include "goo/GooLikely.h"
 #include "Error.h"
 #include "poppler_private_export.h"
+#include <functional>
 
 #define OBJECT_TYPE_CHECK(wanted_type)                                                                                                                                                                                                         \
     if (unlikely(type != (wanted_type))) {                                                                                                                                                                                                     \
@@ -556,6 +557,24 @@ public:
     }
 
     bool getBoolWithDefaultValue(bool defaultValue) const { return (type == objBool) ? booln : defaultValue; }
+
+    template<typename T>
+    T switchObject(const std::function<T(Array *)> &fArray, const std::function<T(Dict *)> &fDict, const std::function<T(Stream *)> &fStream, const std::function<T(Ref)> &fRef, T def)
+    {
+        T v;
+        switch (getType()) {
+        case objArray:
+            return fArray(getArray());
+        case objDict:
+            return fDict(getDict());
+        case objStream:
+            return fStream(getStream());
+        case objRef:
+            return fRef(getRef());
+        default:
+            return def;
+        }
+    }
 
 private:
     // Free object contents.

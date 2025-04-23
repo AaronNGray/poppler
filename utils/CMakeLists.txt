@@ -171,3 +171,26 @@ add_executable(pdfunite ${pdfunite_SOURCES})
 target_link_libraries(pdfunite ${common_libs})
 install(TARGETS pdfunite DESTINATION bin)
 install(FILES pdfunite.1 DESTINATION ${CMAKE_INSTALL_MANDIR}/man1)
+
+# pdfcombine
+set(pdfcombine_SOURCES ${common_srcs}
+  pdfcombine.cc
+)
+add_executable(pdfcombine ${pdfcombine_SOURCES})
+target_link_libraries(pdfcombine ${common_libs})
+install(TARGETS pdfcombine DESTINATION bin)
+
+if (HAVE_CAIRO)
+  set(pdfcombine_tests_SRCS ${common_srcs}
+    pdfcombine_tests.cc
+    ${CMAKE_SOURCE_DIR}/poppler/CairoFontEngine.cc
+    ${CMAKE_SOURCE_DIR}/poppler/CairoOutputDev.cc
+    ${CMAKE_SOURCE_DIR}/poppler/CairoRescaleBox.cc
+  )
+  add_definitions(-DTESTDATADIR=\"${TESTDATADIR}\")
+  poppler_add_test(pdfcombine-tests BUILD_MANUAL_TESTS ${pdfcombine_tests_SRCS})
+  add_test(pdfcombine-tests ${EXECUTABLE_OUTPUT_PATH}/pdfcombine-tests)
+  target_link_libraries(pdfcombine-tests ${common_libs})
+  target_link_libraries(pdfcombine-tests ${CAIRO_LIBRARIES} Freetype::Freetype)
+  target_include_directories(pdfcombine-tests SYSTEM PRIVATE ${CAIRO_INCLUDE_DIRS})
+endif ()

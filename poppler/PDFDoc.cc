@@ -661,6 +661,15 @@ Linearization *PDFDoc::getLinearization()
     return linearization;
 }
 
+void PDFDoc::resetLinearization()
+{
+    if (!pageCache.empty()) {
+        pageCache.clear();
+    }
+    linearization = new Linearization(nullptr);
+    linearizationState = 0;
+}
+
 bool PDFDoc::checkLinearization()
 {
     if (linearization == nullptr) {
@@ -1020,8 +1029,9 @@ int PDFDoc::saveAs(OutStream *outStr, PDFWriteMode mode)
     if (!xref->isModified() && mode == writeStandard) {
         // simply copy the original file
         saveWithoutChangesAs(outStr);
-    } else if (mode == writeForceRewrite) {
+    } else if (mode == writeForceRewrite || catalog->needForcedRewrite()) {
         saveCompleteRewrite(outStr);
+        catalog->resetForcedRewrite();
     } else {
         saveIncrementalUpdate(outStr);
     }
@@ -2263,6 +2273,38 @@ std::optional<PDFDoc::SignatureData> PDFDoc::createSignature(::Page *destPage, s
     formWidget->setWidgetAnnotation(signatureAnnot);
 
     return SignatureData { { ref.num, ref.gen }, signatureAnnot, formWidget, std::move(field) };
+}
+
+std::map<Ref, Ref> PDFDoc::insertPage(Page *page, int num)
+{
+    if (isLinearized()) {
+        resetLinearization();
+    }
+    return getCatalog()->insertPage(page, num);
+}
+
+std::map<Ref, Ref> PDFDoc::insertPage(Page *page, int num, std::optional<std::map<Ref, Ref>> &refMap)
+{
+    if (isLinearized()) {
+        resetLinearization();
+    }
+    return getCatalog()->insertPage(page, num, refMap);
+}
+
+Page *PDFDoc::insertBlankPage(int num)
+{
+    if (isLinearized()) {
+        resetLinearization();
+    }
+    return getCatalog()->insertBlankPage(num);
+}
+
+void PDFDoc::removePage(Page *page)
+{
+    if (isLinearized()) {
+        resetLinearization();
+    }
+    getCatalog()->removePage(page);
 }
 
 std::optional<CryptoSign::SigningError> PDFDoc::sign(const std::string &saveFilename, const std::string &certNickname, const std::string &password, std::unique_ptr<GooString> &&partialFieldName, int page, const PDFRectangle &rect,

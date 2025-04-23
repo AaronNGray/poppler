@@ -310,6 +310,8 @@ POPPLER_PUBLIC
 gboolean poppler_document_save(PopplerDocument *document, const char *uri, GError **error);
 POPPLER_PUBLIC
 gboolean poppler_document_save_a_copy(PopplerDocument *document, const char *uri, GError **error);
+POPPLER_PUBLIC
+gboolean poppler_document_save_outstream(PopplerDocument *document, GOutputStream *stream, GCancellable *cancellable, GError **error);
 #ifndef G_OS_WIN32
 POPPLER_PUBLIC
 gboolean poppler_document_save_to_fd(PopplerDocument *document, int fd, gboolean include_changes, GError **error);
@@ -322,6 +324,12 @@ POPPLER_PUBLIC
 PopplerPage *poppler_document_get_page(PopplerDocument *document, int index);
 POPPLER_PUBLIC
 PopplerPage *poppler_document_get_page_by_label(PopplerDocument *document, const char *label);
+POPPLER_PUBLIC
+void poppler_document_remove_page(PopplerDocument *document, int index);
+POPPLER_PUBLIC
+void poppler_document_insert_page(PopplerDocument *document, PopplerPage *page, int index);
+POPPLER_PUBLIC
+void poppler_document_insert_blank_page(PopplerDocument *document, int index);
 POPPLER_PUBLIC
 gchar *poppler_document_get_pdf_version_string(PopplerDocument *document);
 POPPLER_PUBLIC

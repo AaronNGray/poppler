@@ -1270,3 +1270,218 @@ std::unique_ptr<LinkAction> Catalog::getOpenAction() const
     }
     return {};
 }
+
+class DeepCopyStream : public AutoFreeMemStream
+{
+public:
+    DeepCopyStream(char *bufA, Goffset startA, Goffset lengthA, Object &&dictA) : AutoFreeMemStream(bufA, startA, lengthA, std::move(dictA)) { }
+    StreamKind getKind() const override;
+};
+
+StreamKind DeepCopyStream::getKind() const
+{
+    return strRunLength;
+}
+
+static Object copyObjectsToXRefMap(XRef *sourceXRef, XRef *destXRef, Object &sourceObj, std::map<Ref, Ref> &map)
+{
+    auto rec = [&](Object &obj) { return copyObjectsToXRefMap(sourceXRef, destXRef, obj, map); };
+    return sourceObj.switchObject<Object>(
+            [&](Array *array) {
+                Array *destArray = new Array(destXRef);
+                for (int i = 0; i < array->getLength(); i++) {
+                    Object obj1 = array->getNF(i).copy();
+                    destArray->add(rec(obj1));
+                }
+                return Object(destArray);
+            },
+            [&](Dict *dict) {
+                Dict *destDict = new Dict(destXRef);
+                for (int i = 0; i < dict->getLength(); i++) {
+                    Object obj1 = dict->getValNF(i).copy();
+                    destDict->set(dict->getKey(i), rec(obj1));
+                }
+                return Object(destDict);
+            },
+            [&](Stream *stream) {
+                Dict *destDict = new Dict(destXRef);
+                destDict->setXRef(destXRef);
+                Dict *dict = stream->getDict();
+                for (int i = 0; i < dict->getLength(); i++) {
+                    Object obj1 = dict->getValNF(i).copy();
+                    destDict->set(dict->getKey(i), rec(obj1));
+                }
+
+                /* Actual deep copy of the stream
+                FIXME: should be moved in Object? */
+                Stream *baseStr = stream->getBaseStream();
+                int len;
+                destDict->lookupInt("Length", nullptr, &len);
+                unsigned char *content = new unsigned char[len];
+                baseStr->doGetChars(len, content);
+                Stream *newStr = new DeepCopyStream((char *)content, 0, len, Object(destDict));
+                newStr = newStr->addFilters(destDict, 1);
+                return Object(newStr);
+            },
+            [&](Ref ref) {
+                if (map.count(ref) == 1) {
+                    return Object(map[ref]);
+                }
+                auto o = sourceXRef->fetch(ref);
+                auto next_num = destXRef->addIndirectObject(o);
+                map[ref] = next_num;
+                o = rec(o);
+                destXRef->setModifiedObject(&o, next_num);
+                return Object(next_num);
+            },
+            sourceObj.copy());
+}
+
+static std::pair<Ref, std::map<Ref, Ref>> copyObjectsToXRef(XRef *sourceXRef, XRef *destXRef, Ref sourceRef, Object &parent, std::optional<std::map<Ref, Ref>> &refMap)
+{
+    refMap = refMap.value_or(std::map<Ref, Ref>());
+    Object destObj = sourceXRef->fetch(sourceRef).deepCopy();
+    destObj.dictSet("Parent", Object());
+    auto destRef = destXRef->addIndirectObject(destObj); // Temporary add to get a Ref
+    refMap.value()[sourceRef] = destRef;
+    destObj = copyObjectsToXRefMap(sourceXRef, destXRef, destObj, refMap.value());
+    destObj.dictSet("Parent", parent.copy());
+    destXRef->setModifiedObject(&destObj, destRef);
+    return std::pair(destRef, refMap.value());
+}
+
+std::map<Ref, Ref> Catalog::insertPage(Page *page, int pageNum)
+{
+    std::optional<std::map<Ref, Ref>> refMap = {};
+    return insertPage(page, pageNum, refMap);
+}
+
+std::pair<std::map<Ref, Ref>, Page *> Catalog::insertPageRef(Ref &pageRef, PDFDoc *pageDoc, int pageNum, std::optional<std::map<Ref, Ref>> &refMap)
+{
+    if (pageDoc->getPDFMajorVersion() > catalogPdfMajorVersion) {
+        catalogPdfMinorVersion = pageDoc->getPDFMinorVersion();
+        catalogPdfMajorVersion = pageDoc->getPDFMajorVersion();
+        forcedRewrite = true;
+    } else if (pageDoc->getPDFMajorVersion() == catalogPdfMajorVersion && catalogPdfMinorVersion < pageDoc->getPDFMinorVersion()) {
+        catalogPdfMinorVersion = pageDoc->getPDFMinorVersion();
+        forcedRewrite = true;
+    }
+
+    if (pageNum < 0) {
+        pageNum = getNumPages() + 1;
+    }
+
+    /* First we duplicate all objects referenced by @page to this doc xref */
+    auto parent = Object(xref->getRoot());
+    auto addResult = copyObjectsToXRef(pageDoc->getXRef(), xref, pageRef, parent, refMap);
+    auto newPageRef = addResult.first;
+    Object catalog = xref->getCatalog();
+    const Object &pagesRef = catalog.dictLookupNF("Pages");
+
+    assert(pagesRef.isRef());
+
+    Object pagesObj = xref->fetch(pagesRef.getRef(), 0);
+
+    /* As per pdf specification (sec 7.7.3.2), we can rebuild the whole kids tree.
+       This might not be super efficient for documents with thousands of pages. */
+    Object kids = pagesObj.dictLookup("Kids");
+    Array *newKids = new Array(xref);
+    for (int i = 1; i <= getNumPages(); i++) {
+        if (i == pageNum) {
+            newKids->add(Object(newPageRef));
+        }
+        Ref r = *getPageRef(i);
+        newKids->add(Object(r));
+    }
+    if (pageNum == getNumPages() + 1) {
+        newKids->add(Object(newPageRef));
+    }
+    assert(newKids->getLength() == getNumPages() + 1);
+    pagesObj.dictSet("Kids", Object(newKids));
+    pagesObj.dictSet("Count", Object(newKids->getLength()));
+    xref->setModifiedObject(&pagesObj, pagesRef.getRef());
+
+    /* Reload internal catalog */
+    auto pageIter = pages.begin();
+    for (int i = 1; i < pageNum; i++) {
+        pageIter++;
+    }
+
+    Object newPageObj = xref->fetch(newPageRef);
+
+    // FIXME: it is unclear what should be put for the page attrs here. nullptr for now.
+    auto attrs = std::make_unique<PageAttrs>(nullptr, newPageObj.getDict());
+    auto p = std::make_unique<Page>(doc, pageNum, std::move(newPageObj), newPageRef, std::move(attrs), form);
+    if (!p->isOk()) {
+        error(errSyntaxError, -1, "Failed to create page (page {0:d})", pageNum);
+    }
+    pages.emplace(pageIter, std::move(p), newPageRef);
+
+    numPages++;
+    for (int i = pageNum + 1; i <= getNumPages(); i++) {
+        getPage(i)->changeNum(i);
+    }
+
+    /* Reset page labels */
+    if (pageLabelInfo) {
+        free(pageLabelInfo);
+        pageLabelInfo = nullptr;
+    }
+
+    return std::pair(addResult.second, p.get());
+}
+
+std::map<Ref, Ref> Catalog::insertPage(Page *page, int pageNum, std::optional<std::map<Ref, Ref>> &refMap)
+{
+    Ref pageRef = page->getRef();
+    return insertPageRef(pageRef, page->getDoc(), pageNum, refMap).first;
+}
+
+Page *Catalog::insertBlankPage(int num)
+{
+    Object pageDict = Object(new Dict(xref));
+    pageDict.dictSet("name", std::move(Object(objName, "Page")));
+    Ref r = xref->addIndirectObject(pageDict);
+    std::optional<std::map<Ref, Ref>> refMap = {};
+    return insertPageRef(r, doc, num, refMap).second;
+}
+
+void Catalog::removePage(Page *page)
+{
+    int toRemove = page->getNum();
+    Object catalog = xref->getCatalog();
+    const Object &pagesRef = catalog.dictLookupNF("Pages");
+
+    assert(pagesRef.isRef());
+
+    /* Rebuild a whole Kids array without the page to remove */
+    Object pagesObj = xref->fetch(pagesRef.getRef(), 0);
+    Object kids = pagesObj.dictLookup("Kids");
+    Array *newKids = new Array(xref);
+    for (int i = 1; i <= getNumPages(); i++) {
+        if (i != toRemove) {
+            newKids->add(Object(*getPageRef(i)));
+        }
+    }
+    pagesObj.dictSet("Kids", Object(newKids));
+    pagesObj.dictSet("Count", Object(newKids->getLength()));
+    xref->setModifiedObject(&pagesObj, pagesRef.getRef());
+
+    /* Now, remove the page from internal catalog */
+    numPages--;
+
+    auto pagesIter = pages.begin();
+    for (int i = 1; i < toRemove; i++) {
+        pagesIter++;
+    }
+    pages.erase(pagesIter);
+    for (int j = toRemove; j <= getNumPages(); j++) {
+        getPage(j)->changeNum(j);
+    }
+
+    /* Reset page labels */
+    if (pageLabelInfo) {
+        free(pageLabelInfo);
+        pageLabelInfo = nullptr;
+    }
+}
