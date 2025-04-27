@@ -120,17 +120,25 @@ PopplerAttachment *_poppler_attachment_new(FileSpec *emb_file)
         if (embFile->createDate()) {
             priv->ctime = _poppler_convert_pdf_date_to_date_time(embFile->createDate());
             G_GNUC_BEGIN_IGNORE_DEPRECATIONS
-            /* This will overflow on dates from after 2038. This field is
-             * deprecated, only kept for backward compatibility. */
-            attachment->ctime = (GTime)g_date_time_to_unix(priv->ctime);
+            if (priv->ctime != nullptr) {
+                /* This will overflow on dates from after 2038. This field is
+                 * deprecated, only kept for backward compatibility. */
+                attachment->ctime = (GTime)g_date_time_to_unix(priv->ctime);
+            } else {
+                attachment->ctime = (GTime)0;
+            }
             G_GNUC_END_IGNORE_DEPRECATIONS
         }
         if (embFile->modDate()) {
             priv->mtime = _poppler_convert_pdf_date_to_date_time(embFile->modDate());
             G_GNUC_BEGIN_IGNORE_DEPRECATIONS
-            /* This will overflow on dates from after 2038. This field is
-             * deprecated, only kept for backward compatibility. */
-            attachment->mtime = (GTime)g_date_time_to_unix(priv->mtime);
+            if (priv->ctime != nullptr) {
+                /* This will overflow on dates from after 2038. This field is
+                 * deprecated, only kept for backward compatibility. */
+                attachment->mtime = (GTime)g_date_time_to_unix(priv->mtime);
+            } else {
+                attachment->mtime = (GTime)0;
+            }
             G_GNUC_END_IGNORE_DEPRECATIONS
         }
 
