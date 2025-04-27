@@ -782,6 +782,15 @@ void Gfx::execOp(Object *cmd, Object args[], int numArgs)
       error(errSyntaxWarning, getPos(),
 	    "Too many ({0:d}) args to '{1:s}' operator", numArgs, name);
 #endif
+            // Handle this problematic Tf command "/ /Helvetica 12 Tf" that gets parsed
+            // as one empty Name('') followed by another Name('Helvetica') whereas
+            // we want it to be just one Name('/Helvetica') - Issue #1529
+            if (op->func == &Gfx::opSetFont && args[0].isName("") && args[1].isName()) {
+                std::string buf("/");
+                buf.append(args[1].getName());
+                args[1].setToNull();
+                args[1] = Object(objName, buf.c_str());
+            }
             argPtr += numArgs - op->numArgs;
             numArgs = op->numArgs;
         }

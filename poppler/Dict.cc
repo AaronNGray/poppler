@@ -259,3 +259,34 @@ std::string Dict::findAvailableKey(const std::string &suggestedKey)
     }
     return res;
 }
+
+// Should we also merge Arrays?
+static void doRecursiveMergeDicts(Dict *primary, const Dict *secondary, RefRecursionChecker *alreadySeenDicts)
+{
+    for (int i = 0; i < secondary->getLength(); ++i) {
+        const char *key = secondary->getKey(i);
+        if (!primary->hasKey(key)) {
+            primary->add(key, secondary->lookup(key).deepCopy());
+        } else {
+            Ref primaryRef;
+            Object primaryObj = primary->lookup(key, &primaryRef);
+            if (primaryObj.isDict()) {
+                Ref secondaryRef;
+                Object secondaryObj = secondary->lookup(key, &secondaryRef);
+                if (secondaryObj.isDict()) {
+                    if (!alreadySeenDicts->insert(primaryRef) || !alreadySeenDicts->insert(secondaryRef)) {
+                        // bad PDF
+                        return;
+                    }
+                    doRecursiveMergeDicts(primaryObj.getDict(), secondaryObj.getDict(), alreadySeenDicts);
+                }
+            }
+        }
+    }
+}
+
+void Dict::recursiveMergeDicts(Dict *primary, const Dict *secondary)
+{
+    RefRecursionChecker alreadySeenDicts;
+    doRecursiveMergeDicts(primary, secondary, &alreadySeenDicts);
+}

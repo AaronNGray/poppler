@@ -108,6 +108,8 @@ public:
     // otherwise it will start adding 0, 1, 2, 3, etc. to suggestedKey until there's one available
     std::string findAvailableKey(const std::string &suggestedKey);
 
+    static void recursiveMergeDicts(Dict *primary, const Dict *secondary);
+
 private:
     friend class Object; // for incRef/decRef
 
