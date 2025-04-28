@@ -954,6 +954,37 @@ void QPainterOutputDev::drawChar(GfxState *state, double x, double y, double dx,
     }
 }
 
+bool QPainterOutputDev::beginType3Char(GfxState *state, double x, double y, double dx, double dy, CharCode code, const Unicode *u, int uLen)
+{
+    // Store the QPainter state; we need to modify it temporarily
+    m_painter.top()->save();
+
+    // Make the glyph position the coordinate origin -- that's our center of scaling
+    m_painter.top()->translate(QPointF(x, y));
+
+    const double *mat = state->getFont()->getFontMatrix();
+    QTransform fontMatrix(mat[0], mat[1], mat[2], mat[3], mat[4], mat[5]);
+
+    // Scale with the font size
+    fontMatrix.scale(state->getFontSize(), state->getFontSize());
+    m_painter.top()->setTransform(fontMatrix, true);
+
+    // Apply the text matrix on top
+    const double *textMat = state->getTextMat();
+
+    QTransform textTransform(textMat[0] * state->getHorizScaling(), textMat[1] * state->getHorizScaling(), textMat[2], textMat[3], 0, 0);
+
+    m_painter.top()->setTransform(textTransform, true);
+
+    return false;
+}
+
+void QPainterOutputDev::endType3Char(GfxState *state)
+{
+    // Restore transformation
+    m_painter.top()->restore();
+}
+
 void QPainterOutputDev::type3D0(GfxState *state, double wx, double wy) { }
 
 void QPainterOutputDev::type3D1(GfxState *state, double wx, double wy, double llx, double lly, double urx, double ury) { }

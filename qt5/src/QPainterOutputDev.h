@@ -82,7 +82,7 @@ public:
 
     // Does this device use beginType3Char/endType3Char?  Otherwise,
     // text in Type 3 fonts will be drawn with drawChar/drawString.
-    bool interpretType3Chars() override { return false; }
+    bool interpretType3Chars() override { return true; }
 
     //----- initialization and control
 
@@ -141,6 +141,9 @@ public:
                              bool maskInterpolate) override;
 
     //----- Type 3 font operators
+    bool beginType3Char(GfxState *state, double x, double y, double dx, double dy, CharCode code, const Unicode *u, int uLen) override;
+    void endType3Char(GfxState *state) override;
+
     void type3D0(GfxState *state, double wx, double wy) override;
     void type3D1(GfxState *state, double wx, double wy, double llx, double lly, double urx, double ury) override;
 
