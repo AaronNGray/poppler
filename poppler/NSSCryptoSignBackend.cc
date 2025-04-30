@@ -210,13 +210,6 @@ static char *passwordCallback(PK11SlotInfo * /*slot*/, PRBool /*retry*/, void *a
     return PL_strdup(static_cast<char *>(arg));
 }
 
-static void shutdownNss()
-{
-    if (NSS_Shutdown() != SECSuccess) {
-        fprintf(stderr, "NSS_Shutdown failed: %s\n", PR_ErrorToString(PORT_GetError(), PR_LANGUAGE_I_DEFAULT));
-    }
-}
-
 // An ASN.1 object identifier (OID) is typically written as a dot-separated sequence of integers
 // and encoded as a sequence of bytes. Because we only ever need to handle BER encoded OIDs, keep
 // them encoded from the beginning to avoid conversions at run time.
@@ -627,7 +620,13 @@ static std::optional<std::string> getDefaultFirefoxCertDB()
     return {};
 }
 
+static NSSInitContext *poppler_NSSInitContext(const char *configdir)
+{
+    return NSS_InitContext(configdir, "", "", SECMOD_DB, NULL, NSS_INIT_READONLY);
+}
+
 std::string NSSSignatureConfiguration::sNssDir;
+NSSInitContext *NSSSignatureConfiguration::sInitContext = nullptr;
 
 /**
  * Initialise NSS
@@ -649,33 +648,32 @@ void NSSSignatureConfiguration::setNSSDir(const GooString &nssDir)
 
     atexit(shutdownNss);
 
-    bool initSuccess = false;
     if (nssDir.getLength() > 0) {
-        initSuccess = (NSS_Init(nssDir.c_str()) == SECSuccess);
+        sInitContext = poppler_NSSInitContext(nssDir.c_str());
         sNssDir = nssDir.toStr();
     } else {
         const std::optional<std::string> certDBPath = getDefaultFirefoxCertDB();
         if (!certDBPath) {
-            initSuccess = (NSS_Init("sql:/etc/pki/nssdb") == SECSuccess);
+            sInitContext = poppler_NSSInitContext("sql:/etc/pki/nssdb");
             sNssDir = "sql:/etc/pki/nssdb";
         } else {
-            initSuccess = (NSS_Init(certDBPath->c_str()) == SECSuccess);
+            sInitContext = poppler_NSSInitContext(certDBPath->c_str());
             sNssDir = *certDBPath;
         }
-        if (!initSuccess) {
+        if (!sInitContext) {
             GooString homeNssDb(getenv("HOME"));
             homeNssDb.append("/.pki/nssdb");
-            initSuccess = (NSS_Init(homeNssDb.c_str()) == SECSuccess);
+            sInitContext = poppler_NSSInitContext(homeNssDb.c_str());
             sNssDir = homeNssDb.toStr();
         }
     }
 
-    if (initSuccess) {
+    if (sInitContext) {
         // Make sure NSS root certificates module is loaded
         SECMOD_AddNewModule("Root Certs", "libnssckbi.so", 0, 0);
     } else {
         fprintf(stderr, "NSS_Init failed: %s\n", PR_ErrorToString(PORT_GetError(), PR_LANGUAGE_I_DEFAULT));
-        NSS_NoDB_Init(nullptr);
+        sInitContext = NSS_InitContext("", "", "", "", NULL, NSS_INIT_READONLY | NSS_INIT_NOCERTDB | NSS_INIT_NOMODDB | NSS_INIT_FORCEOPEN | NSS_INIT_OPTIMIZESPACE);
     }
 }
 
@@ -689,6 +687,13 @@ static std::function<char *(const char *)> PasswordFunction;
 void NSSSignatureConfiguration::setNSSPasswordCallback(const std::function<char *(const char *)> &f)
 {
     PasswordFunction = f;
+}
+
+void NSSSignatureConfiguration::shutdownNss()
+{
+    if (NSS_ShutdownContext(sInitContext) != SECSuccess) {
+        fprintf(stderr, "NSS_ShutdownContext failed: %s\n", PR_ErrorToString(PORT_GetError(), PR_LANGUAGE_I_DEFAULT));
+    }
 }
 
 NSSSignatureVerification::NSSSignatureVerification(std::vector<unsigned char> &&p7data) : p7(std::move(p7data)), CMSMessage(nullptr), CMSSignedData(nullptr), CMSSignerInfo(nullptr)
