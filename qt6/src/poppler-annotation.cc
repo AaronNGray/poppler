@@ -2955,7 +2955,6 @@ Annot *SignatureAnnotationPrivate::createNativeAnnot(::Page *destPage, DocumentD
         return nullptr;
     }
 
-    sig->formWidget->updateWidgetAppearance();
     field = std::move(sig->field);
 
     // Set properties
@@ -3094,7 +3093,7 @@ SignatureAnnotation::SigningResult SignatureAnnotation::sign(const QString &outp
     Q_D(SignatureAnnotation);
     auto formField = std::make_unique<FormFieldSignature>(d->parentDoc, d->pdfPage, static_cast<::FormWidgetSignature *>(d->field->getCreateWidget()));
 
-    const auto result = formField->sign(outputFileName, data);
+    const auto result = formField->signWithoutAppearance(outputFileName, data);
 
     switch (result) {
     case FormFieldSignature::SigningSuccess:
