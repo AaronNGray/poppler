@@ -3533,6 +3533,10 @@ void PSOutputDev::startPage(int pageNum, GfxState *state, XRef *xrefA)
         }
         if (paperMatch) {
             page = doc->getCatalog()->getPage(pageNum);
+            if (page == nullptr) {
+                error(errInternal, -1, "unable to get page from catalog");
+                return;
+            }
             imgLLX = imgLLY = 0;
             if (noCrop) {
                 imgURX = (int)ceil(page->getMediaWidth());
