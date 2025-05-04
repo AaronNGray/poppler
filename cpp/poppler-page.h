@@ -33,23 +33,23 @@
 namespace poppler {
 
 struct text_box_data;
-class POPPLER_CPP_EXPORT text_box
+class text_box
 {
     friend class page;
 
 public:
-    text_box(text_box &&) noexcept;
-    text_box &operator=(text_box &&) noexcept;
+    POPPLER_CPP_EXPORT text_box(text_box &&) noexcept;
+    POPPLER_CPP_EXPORT text_box &operator=(text_box &&) noexcept;
 
-    ~text_box();
+    POPPLER_CPP_EXPORT ~text_box();
 
-    ustring text() const;
-    rectf bbox() const;
+    POPPLER_CPP_EXPORT ustring text() const;
+    POPPLER_CPP_EXPORT rectf bbox() const;
 
     /**
       \since 0.68
     */
-    int rotation() const;
+    POPPLER_CPP_EXPORT int rotation() const;
 
     /**
        Get a bbox for the i-th glyph
@@ -64,13 +64,13 @@ public:
        is returned. The number of the glyphs and ustring
        codepoints might be different in some complex scripts.
      */
-    rectf char_bbox(size_t i) const;
-    bool has_space_after() const;
+    POPPLER_CPP_EXPORT rectf char_bbox(size_t i) const;
+    POPPLER_CPP_EXPORT bool has_space_after() const;
 
     /**
       \since 0.89
      */
-    bool has_font_info() const;
+    POPPLER_CPP_EXPORT bool has_font_info() const;
 
     /**
        Get a writing mode for the i-th glyph
@@ -92,7 +92,7 @@ public:
     /**
       \since 0.89
      */
-    writing_mode_enum get_wmode(int i = 0) const;
+    POPPLER_CPP_EXPORT writing_mode_enum get_wmode(int i = 0) const;
 
     /**
        Get a font size of this text_box instance.
@@ -104,7 +104,7 @@ public:
     /**
       \since 0.89
      */
-    double get_font_size() const;
+    POPPLER_CPP_EXPORT double get_font_size() const;
 
     /**
        Get a font name for the i-th glyph
@@ -126,7 +126,7 @@ public:
     /**
       \since 0.89
      */
-    std::string get_font_name(int i = 0) const;
+    POPPLER_CPP_EXPORT std::string get_font_name(int i = 0) const;
 
 private:
     explicit text_box(text_box_data *data);
