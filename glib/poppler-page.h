@@ -420,7 +420,8 @@ void poppler_form_field_mapping_free(PopplerFormFieldMapping *mapping);
 
 /**
  * PopplerAnnotMapping:
- * @area: a #PopplerRectangle representing an area of the page
+ * @area: a #PopplerRectangle representing an area of the page in normalized
+ * coordinates
  * @annot: a #PopplerAnnot
  *
  * A #PopplerAnnotMapping structure represents the location
