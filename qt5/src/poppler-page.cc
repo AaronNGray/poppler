@@ -70,6 +70,9 @@
 #include <Rendition.h>
 #include <SplashOutputDev.h>
 #include <splash/SplashBitmap.h>
+#if defined(HAVE_CAIRO)
+#    include <CairoOutputDev.h>
+#endif
 
 #include "poppler-private.h"
 #include "poppler-page-transition-private.h"
@@ -542,6 +545,9 @@ QImage Page::renderToImage(double xres, double yres, int xPos, int yPos, int w, 
 {
     int rotation = (int)rotate * 90;
     QImage img;
+
+    const bool hideAnnotations = m_page->parentDoc->m_hints & Document::HideAnnotations;
+
     switch (m_page->parentDoc->m_backend) {
     case Poppler::Document::SplashBackend: {
         SplashColor bgColor;
@@ -598,12 +604,9 @@ QImage Page::renderToImage(double xres, double yres, int xPos, int yPos, int w, 
 
         splash_output.startDoc(m_page->parentDoc->doc);
 
-        const bool hideAnnotations = m_page->parentDoc->m_hints & Document::HideAnnotations;
-
         OutputDevCallbackHelper *abortHelper = &splash_output;
         m_page->parentDoc->doc->displayPageSlice(&splash_output, m_page->index + 1, xres, yres, rotation, false, true, false, xPos, yPos, w, h, shouldAbortRenderCallback ? shouldAbortRenderInternalCallback : nullAbortCallBack, abortHelper,
                                                  (hideAnnotations) ? annotDisplayDecideCbk : nullAnnotCallBack, nullptr, true);
-
         img = splash_output.getXBGRImage(true /* takeImageData */);
         break;
     }
@@ -628,6 +631,66 @@ QImage Page::renderToImage(double xres, double yres, int xPos, int yPos, int w, 
         renderToQPainter(&qpainter_output, &painter, m_page, xres, yres, xPos, yPos, w, h, rotate, DontSaveAndRestore);
         painter.end();
         img = tmpimg;
+        break;
+    }
+    case Poppler::Document::CairoBackend: {
+        QSize size = pageSize();
+        int output_w = (w == -1) ? qRound(size.width() * xres / 72.0) : w;
+        int output_h = (h == -1) ? qRound(size.height() * yres / 72.0) : h;
+
+        QImage cairoImg(output_w, output_h, QImage::Format_ARGB32);
+
+        // Fill the page with the selected background color
+        QColor bgColor(m_page->parentDoc->paperColor.red(), m_page->parentDoc->paperColor.green(), m_page->parentDoc->paperColor.blue(), m_page->parentDoc->paperColor.alpha());
+
+        cairoImg.fill(bgColor);
+
+#if defined(HAVE_CAIRO)
+        // Create the Cairo renderer
+        CairoOutputDev cairoOut;
+        cairoOut.startDoc(m_page->parentDoc->doc);
+
+        // We render directly into the memory allocated by cairoImg
+        cairo_surface_t *surface = cairo_image_surface_create_for_data(cairoImg.bits(), CAIRO_FORMAT_ARGB32, output_w, output_h, cairoImg.bytesPerLine());
+
+        cairo_t *cr;
+        cairo_status_t status;
+
+        cr = cairo_create(surface);
+
+        cairoOut.setCairo(cr);
+        cairoOut.setPrinting(false);
+        cairoOut.setAntialias(m_page->parentDoc->m_hints & Document::Antialiasing ? CAIRO_ANTIALIAS_DEFAULT : CAIRO_ANTIALIAS_NONE);
+
+        cairo_save(cr);
+
+        m_page->parentDoc->doc->displayPageSlice(&cairoOut, m_page->index + 1, xres, yres, rotation,
+                                                 true, // useMediaBox
+                                                 true, // crop
+                                                 false, // printing
+                                                 xPos, yPos, w, h,
+                                                 nullptr, // TODO: abortHelper, not sure whether CairoOutputDev supports that
+                                                 nullptr, (hideAnnotations) ? annotDisplayDecideCbk : nullAnnotCallBack);
+
+        cairo_restore(cr);
+        cairoOut.setCairo(nullptr);
+
+        status = cairo_status(cr);
+        if (status)
+            fprintf(stderr, "cairo error: %s\n", cairo_status_to_string(status));
+        cairo_destroy(cr);
+
+        cairo_surface_finish(surface);
+        status = cairo_surface_status(surface);
+        if (status)
+            fprintf(stderr, "cairo error: %s\n", cairo_status_to_string(status));
+        cairo_surface_destroy(surface);
+#else
+        qDebug() << "Cairo backend requested, but poppler built without Cairo support!";
+#endif
+
+        img = cairoImg;
+
         break;
     }
     }
@@ -655,6 +718,8 @@ bool Page::renderToPainter(QPainter *painter, double xres, double yres, int x, i
 
         return renderToQPainter(&qpainter_output, painter, m_page, xres, yres, x, y, w, h, rotate, flags);
     }
+    case Poppler::Document::CairoBackend:
+        return false;
     }
     return false;
 }
