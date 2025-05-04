@@ -79,6 +79,9 @@ static const char *getReadableSigState(SignatureValidationStatus sig_vs)
     case SIGNATURE_NOT_VERIFIED:
         return "Signature has not yet been verified.";
 
+    case SIGNATURE_ALGORITHM_DISABLED:
+        return "Signature uses disabled algorithm.";
+
     default:
         return "Unknown Validation Failure.";
     }

@@ -834,6 +834,9 @@ static SignatureValidationStatus NSS_SigTranslate(NSSCMSVerificationStatus nss_c
         return SIGNATURE_VALID;
 
     case NSSCMSVS_BadSignature:
+        if (PORT_GetError() == SEC_ERROR_SIGNATURE_ALGORITHM_DISABLED) {
+            return SIGNATURE_ALGORITHM_DISABLED;
+        }
         return SIGNATURE_INVALID;
 
     case NSSCMSVS_DigestMismatch:
