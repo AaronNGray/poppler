@@ -12,6 +12,10 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     int npages;
     GList *matches;
 
+    if (!g_utf8_validate((char *)data, size, NULL)) {
+        return 0;
+    }
+
     doc = poppler_document_new_from_data((char *)data, size, NULL, &err);
     if (doc == NULL) {
         g_error_free(err);
