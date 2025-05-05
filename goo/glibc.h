@@ -32,7 +32,11 @@ time_t POPPLER_PRIVATE_EXPORT timegm(struct tm *tm);
 #endif
 
 #ifndef HAVE_STRTOK_R
+#    ifdef _WIN32
+#        define strtok_r strtok_s
+#    else
 char *strtok_r(char *s, const char *delim, char **save_ptr);
+#    endif
 #endif
 
 #endif // GLIBC_H

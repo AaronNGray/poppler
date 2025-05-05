@@ -33,6 +33,10 @@ description for all fonts available in Windows. That's how MuPDF works.
 #include <cstdio>
 #include <cctype>
 #include <cassert>
+#ifdef _MSC_VER
+/* MSVC doesn't have strcasecmp, but it has _stricmp *
+#    define strcasecmp _stricmp
+#endif
 
 #include "goo/gmem.h"
 #include "goo/GooString.h"
@@ -53,11 +57,11 @@ description for all fonts available in Windows. That's how MuPDF works.
 
 #define DEFAULT_SUBSTITUTE_FONT "Helvetica"
 #define DEFAULT_CID_FONT_AC1_MSWIN "MingLiU" /* Adobe-CNS1 for Taiwan, HongKong */
-#define DEFAULT_CID_FONT_AG1_MSWIN "SimSun" /* Adobe-GB1 for PRC, Singapore */
-#define DEFAULT_CID_FONT_AJ1_MSWIN "MS-Mincho" /* Adobe-Japan1 */
-#define DEFAULT_CID_FONT_AJ2_MSWIN "MS-Mincho" /* Adobe-Japan2 (legacy) */
-#define DEFAULT_CID_FONT_AK1_MSWIN "Batang" /* Adobe-Korea1 */
-#define DEFAULT_CID_FONT_MSWIN "ArialUnicode" /* Unknown */
+#    define DEFAULT_CID_FONT_AG1_MSWIN "SimSun" /* Adobe-GB1 for PRC, Singapore */
+#    define DEFAULT_CID_FONT_AJ1_MSWIN "MS-Mincho" /* Adobe-Japan1 */
+#    define DEFAULT_CID_FONT_AJ2_MSWIN "MS-Mincho" /* Adobe-Japan2 (legacy) */
+#    define DEFAULT_CID_FONT_AK1_MSWIN "Batang" /* Adobe-Korea1 */
+#    define DEFAULT_CID_FONT_MSWIN "ArialUnicode" /* Unknown */
 
 static const struct
 {

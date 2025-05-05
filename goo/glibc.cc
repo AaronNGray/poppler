@@ -16,21 +16,31 @@
 #ifndef HAVE_GMTIME_R
 struct tm *gmtime_r(const time_t *timep, struct tm *result)
 {
+#    ifdef _WIN32
+    gmtime_s(result, timep);
+    return result;
+#    else
     struct tm *gt;
     gt = gmtime(timep);
     if (gt)
         *result = *gt;
     return gt;
+#    endif
 }
 #endif
 
 #ifndef HAVE_LOCALTIME_R
 struct tm *localtime_r(const time_t *timep, struct tm *result)
 {
+#    ifdef _WIN32
+    localtime_s(result, timep);
+    return result;
+#    else
     struct tm *lt;
     lt = localtime(timep);
     *result = *lt;
     return lt;
+#    endif
 }
 #endif
 
