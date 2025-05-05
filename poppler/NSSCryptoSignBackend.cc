@@ -377,6 +377,21 @@ static SECOidTag ConvertHashAlgorithmToNss(HashAlgorithm digestAlgId)
         return SEC_OID_SHA512;
     case HashAlgorithm::Sha224:
         return SEC_OID_SHA224;
+#if NSS_VMAJOR >= 3 && NSS_VMINOR >= 91
+    case HashAlgorithm::Sha3_224:
+        return SEC_OID_SHA3_224;
+    case HashAlgorithm::Sha3_256:
+        return SEC_OID_SHA3_256;
+    case HashAlgorithm::Sha3_384:
+        return SEC_OID_SHA3_384;
+    case HashAlgorithm::Sha3_512:
+        return SEC_OID_SHA3_512;
+#else
+    case HashAlgorithm::Sha3_224:
+    case HashAlgorithm::Sha3_256:
+    case HashAlgorithm::Sha3_384:
+    case HashAlgorithm::Sha3_512:
+#endif
     case HashAlgorithm::Unknown:
         return SEC_OID_UNKNOWN;
     }
@@ -401,11 +416,14 @@ static HashAlgorithm ConvertHashTypeFromNss(HASH_HashType type)
     case HASH_AlgSHA224:
         return HashAlgorithm::Sha224;
 #if NSS_VMAJOR >= 3 && NSS_VMINOR >= 91
-    // TODO Expose this in HashAlgorithm if PDF supports them
     case HASH_AlgSHA3_224:
+        return HashAlgorithm::Sha3_224;
     case HASH_AlgSHA3_256:
+        return HashAlgorithm::Sha3_256;
     case HASH_AlgSHA3_384:
+        return HashAlgorithm::Sha3_384;
     case HASH_AlgSHA3_512:
+        return HashAlgorithm::Sha3_512;
 #endif
     case HASH_AlgNULL:
     case HASH_AlgTOTAL:

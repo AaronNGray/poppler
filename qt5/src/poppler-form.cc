@@ -898,6 +898,14 @@ SignatureValidationInfo::HashAlgorithm SignatureValidationInfo::hashAlgorithm() 
         return HashAlgorithmSha512;
     case ::HashAlgorithm::Sha224:
         return HashAlgorithmSha224;
+    case ::HashAlgorithm::Sha3_224:
+        return HashAlgorithmSha3_224;
+    case ::HashAlgorithm::Sha3_256:
+        return HashAlgorithmSha3_256;
+    case ::HashAlgorithm::Sha3_384:
+        return HashAlgorithmSha3_384;
+    case ::HashAlgorithm::Sha3_512:
+        return HashAlgorithmSha3_512;
     case ::HashAlgorithm::Unknown:
         return HashAlgorithmUnknown;
     }

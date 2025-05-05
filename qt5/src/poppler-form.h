@@ -1,6 +1,6 @@
 /* poppler-form.h: qt interface to poppler
  * Copyright (C) 2007-2008, Pino Toscano <pino@kde.org>
- * Copyright (C) 2008, 2011, 2016, 2017, 2019-2022, Albert Astals Cid <aacid@kde.org>
+ * Copyright (C) 2008, 2011, 2016, 2017, 2019-2023, Albert Astals Cid <aacid@kde.org>
  * Copyright (C) 2012, Adam Reichold <adamreichold@myopera.com>
  * Copyright (C) 2016, Hanno Meyer-Thurow <h.mth@web.de>
  * Copyright (C) 2017, Hans-Ulrich Jüttner <huj@froreich-bioscientia.de>
@@ -731,7 +731,11 @@ public:
         HashAlgorithmSha256,
         HashAlgorithmSha384,
         HashAlgorithmSha512,
-        HashAlgorithmSha224
+        HashAlgorithmSha224,
+        HashAlgorithmSha3_224, ///< \since 22.08
+        HashAlgorithmSha3_256, ///< \since 22.08
+        HashAlgorithmSha3_384, ///< \since 22.08
+        HashAlgorithmSha3_512 ///< \since 22.08
     };
 
     /// \cond PRIVATE
