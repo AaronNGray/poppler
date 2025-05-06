@@ -43,7 +43,10 @@
 #include "Object.h"
 #include "Function.h"
 
+#include <algorithm>
 #include <cassert>
+#include <cmath>
+#include <limits>
 #include <map>
 #include <memory>
 #include <vector>
@@ -115,7 +118,12 @@ typedef int GfxColorComp;
 
 static inline GfxColorComp dblToCol(double x)
 {
-    return (GfxColorComp)(x * gfxColorComp1);
+    double y = x * gfxColorComp1;
+    if (std::isnan(y)) {
+        return 0;
+    }
+    // Saturating cast to GfxColorComp
+    return std::clamp(y, (double)std::numeric_limits<GfxColorComp>::min(), (double)std::numeric_limits<GfxColorComp>::max());
 }
 
 static inline double colToDbl(GfxColorComp x)
