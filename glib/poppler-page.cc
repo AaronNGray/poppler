@@ -805,6 +805,38 @@ char *poppler_page_get_text_for_area(PopplerPage *page, PopplerRectangle *area)
 }
 
 /**
+ * poppler_page_get_text_for_annotation:
+ * @page: a #PopplerPage
+ * @area: a #PopplerRectangle
+ *
+ * Retrieves the text of @page contained in @area. @area's coordinates are in reference to
+ * the bottom left corner of the page.
+ *
+ * Return value: a pointer to the text as a string
+ *
+ * Since: ?
+ **/
+char *poppler_page_get_text_for_annotation(PopplerPage *page, PopplerRectangle *area)
+{
+    g_return_val_if_fail(POPPLER_IS_PAGE(page), NULL);
+    g_return_val_if_fail(area != nullptr, NULL);
+
+    PopplerRectangle pageSize = { 0, 0, 0, 0 };
+    poppler_page_get_size(page, &pageSize.x2, &pageSize.y2);
+
+    PopplerRectangle blArea;
+    blArea.x1 = area->x1;
+    blArea.x2 = area->x2;
+    blArea.y1 = pageSize.y2 - area->y1;
+    blArea.y2 = pageSize.y2 - area->y2;
+
+    if (blArea.y1 > blArea.y2) {
+        std::swap(blArea.y1, blArea.y2);
+    }
+    return poppler_page_get_selected_text(page, POPPLER_SELECTION_GLYPH, &blArea);
+}
+
+/**
  * poppler_page_find_text_with_options:
  * @page: a #PopplerPage
  * @text: the text to search for (UTF-8 encoded)

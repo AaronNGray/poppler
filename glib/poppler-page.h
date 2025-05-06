@@ -72,6 +72,8 @@ char *poppler_page_get_text(PopplerPage *page);
 POPPLER_PUBLIC
 char *poppler_page_get_text_for_area(PopplerPage *page, PopplerRectangle *area);
 POPPLER_PUBLIC
+char *poppler_page_get_text_for_annotation(PopplerPage *page, PopplerRectangle *area);
+POPPLER_PUBLIC
 char *poppler_page_get_selected_text(PopplerPage *page, PopplerSelectionStyle style, PopplerRectangle *selection);
 POPPLER_PUBLIC
 cairo_region_t *poppler_page_get_selected_region(PopplerPage *page, gdouble scale, PopplerSelectionStyle style, PopplerRectangle *selection);
