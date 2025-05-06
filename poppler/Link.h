@@ -187,7 +187,7 @@ private:
 // LinkGoToR
 //------------------------------------------------------------------------
 
-class LinkGoToR : public LinkAction
+class POPPLER_PRIVATE_EXPORT LinkGoToR : public LinkAction
 {
 public:
     // Build a LinkGoToR from a file spec (dictionary) and destination
@@ -217,7 +217,7 @@ private:
 // LinkLaunch
 //------------------------------------------------------------------------
 
-class LinkLaunch : public LinkAction
+class POPPLER_PRIVATE_EXPORT LinkLaunch : public LinkAction
 {
 public:
     // Build a LinkLaunch from an action dictionary.
@@ -265,7 +265,7 @@ private:
 // LinkNamed
 //------------------------------------------------------------------------
 
-class LinkNamed : public LinkAction
+class POPPLER_PRIVATE_EXPORT LinkNamed : public LinkAction
 {
 public:
     // Build a LinkNamed given the action name.
@@ -287,7 +287,7 @@ private:
 // LinkMovie
 //------------------------------------------------------------------------
 
-class LinkMovie : public LinkAction
+class POPPLER_PRIVATE_EXPORT LinkMovie : public LinkAction
 {
 public:
     enum OperationType
@@ -327,7 +327,7 @@ private:
 // LinkRendition
 //------------------------------------------------------------------------
 
-class LinkRendition : public LinkAction
+class POPPLER_PRIVATE_EXPORT LinkRendition : public LinkAction
 {
 public:
     /**
@@ -372,7 +372,7 @@ private:
 // LinkSound
 //------------------------------------------------------------------------
 
-class LinkSound : public LinkAction
+class POPPLER_PRIVATE_EXPORT LinkSound : public LinkAction
 {
 public:
     explicit LinkSound(const Object *soundObj);
@@ -401,7 +401,7 @@ private:
 // LinkJavaScript
 //------------------------------------------------------------------------
 
-class LinkJavaScript : public LinkAction
+class POPPLER_PRIVATE_EXPORT LinkJavaScript : public LinkAction
 {
 public:
     // Build a LinkJavaScript given the action name.
@@ -424,7 +424,7 @@ private:
 //------------------------------------------------------------------------
 // LinkOCGState
 //------------------------------------------------------------------------
-class LinkOCGState : public LinkAction
+class POPPLER_PRIVATE_EXPORT LinkOCGState : public LinkAction
 {
 public:
     explicit LinkOCGState(const Object *obj);
@@ -462,7 +462,7 @@ private:
 // LinkHide
 //------------------------------------------------------------------------
 
-class LinkHide : public LinkAction
+class POPPLER_PRIVATE_EXPORT LinkHide : public LinkAction
 {
 public:
     explicit LinkHide(const Object *hideObj);

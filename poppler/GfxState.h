@@ -826,7 +826,7 @@ private:
 // GfxTilingPattern
 //------------------------------------------------------------------------
 
-class GfxTilingPattern : public GfxPattern
+class POPPLER_PRIVATE_EXPORT GfxTilingPattern : public GfxPattern
 {
 public:
     static std::unique_ptr<GfxTilingPattern> parse(Object *patObj, int patternRefNum);
@@ -1011,7 +1011,7 @@ private:
 // GfxAxialShading
 //------------------------------------------------------------------------
 
-class GfxAxialShading : public GfxUnivariateShading
+class POPPLER_PRIVATE_EXPORT GfxAxialShading : public GfxUnivariateShading
 {
 public:
     GfxAxialShading(double x0A, double y0A, double x1A, double y1A, double t0A, double t1A, std::vector<std::unique_ptr<Function>> &&funcsA, bool extend0A, bool extend1A);
@@ -1042,7 +1042,7 @@ private:
 // GfxRadialShading
 //------------------------------------------------------------------------
 
-class GfxRadialShading : public GfxUnivariateShading
+class POPPLER_PRIVATE_EXPORT GfxRadialShading : public GfxUnivariateShading
 {
 public:
     GfxRadialShading(double x0A, double y0A, double r0A, double x1A, double y1A, double r1A, double t0A, double t1A, std::vector<std::unique_ptr<Function>> &&funcsA, bool extend0A, bool extend1A);

@@ -436,7 +436,7 @@ private:
 // FormFieldButton
 //------------------------------------------------------------------------
 
-class FormFieldButton : public FormField
+class POPPLER_PRIVATE_EXPORT FormFieldButton : public FormField
 {
 public:
     FormFieldButton(PDFDoc *docA, Object &&dict, const Ref ref, FormField *parent, std::set<int> *usedParents);

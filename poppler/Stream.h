@@ -973,7 +973,7 @@ private:
 
 struct CCITTCodeTable;
 
-class CCITTFaxStream : public FilterStream
+class POPPLER_PRIVATE_EXPORT CCITTFaxStream : public FilterStream
 {
 public:
     CCITTFaxStream(Stream *strA, int encodingA, bool endOfLineA, bool byteAlignA, int columnsA, int rowsA, bool endOfBlockA, bool blackA, int damagedRowsBeforeErrorA);

@@ -46,6 +46,18 @@ build:
     - ninja -j ${FDO_CI_CONCURRENT} all_verify_interface_header_sets
     - ctest --output-on-failure
 
+build_sanitizers:
+  stage: build
+  script:
+    - apt-get update
+    - apt-get install --yes --no-install-recommends extra-cmake-modules clang-19
+    - bash do-the-gnupg-2.4-dance.sh $PWD/build/gnupg/
+    - git clone --branch ${CI_COMMIT_REF_NAME} --depth 1 ${TEST_DATA_URL} test-data || git clone --depth 1 ${UPSTREAM_TEST_DATA_URL} test-data
+    - mkdir -p build && cd build
+    - CC=clang-19 CXX=clang++-19 cmake -G Ninja -DECM_ENABLE_SANITIZERS='address;leak;undefined' -DTESTDATADIR=$PWD/../test-data -DCMAKE_PREFIX_PATH=$PWD/gnupg ..
+    - ninja -j ${FDO_CI_CONCURRENT}
+    - ctest --output-on-failure
+
 build_clang19_libcpp:
   stage: build
   script:
