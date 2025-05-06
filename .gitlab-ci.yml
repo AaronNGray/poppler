@@ -220,3 +220,24 @@ trigger_pages:
   script:
     - 'curl --request POST --form "token=$WEB_PAGE_TRIGGER" --form ref=master https://gitlab.freedesktop.org/api/v4/projects/poppler%2Fpoppler-web-page/trigger/pipeline'
   cache: {}
+
+rendering_regression_tests:
+  stage: build
+  # This job shall only be triggered manually, because it is so time-consuming
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+      when: always
+    - when: never
+  script:
+    # Do we need to clone the test repo at all?
+    - git clone --branch ${CI_COMMIT_REF_NAME} --depth 1 ${TEST_DATA_URL} test-data || git clone --depth 1 ${UPSTREAM_TEST_DATA_URL} test-data
+    - mkdir -p build && cd build
+    - cmake -G Ninja -DTESTDATADIR=$PWD/../test-data ..
+    - ninja
+    # Download the test files from where they are on the internet
+    - python3 ../regtest/main.py download-files --files-dir=test-files ../regtest/list-of-test-files.txt
+    # Create reference renderings
+    # TODO: This ain't working: Right now we are creating the reference renderings
+    # with the code that we want to test.
+    - python3 ../regtest/main.py create-refs --refs-dir=reference-renderings test-files
+    - python3 ../regtest/main.py -v run-tests --refs-dir=reference-renderings test-files

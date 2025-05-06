@@ -27,15 +27,15 @@ import urllib.request
 class DownloadFiles(Command):
 
     name = 'download-files'
-    usage_args = '[ options ... ] file-with-files '
-    description = 'Downloads files listed in the given file. For each file the first word is the output filename and the second is the url to download from'
+    usage_args = '[ options ... ] <file-with-files>'
+    description = 'Downloads files listed in the given file. For each line in the file, the first word is the output filename and the second word is the URL to download the file from.'
 
     def __init__(self):
         Command.__init__(self)
         parser = self._get_args_parser()
         parser.add_argument('--files-dir',
                             action = 'store', dest = 'files_dir', default = os.path.join(tempfile.gettempdir(), 'files'),
-                            help = 'Directory where the files will be downloaded')
+                            help = 'Directory where the files will be downloaded to')
         parser.add_argument('-f', '--force',
                             action = 'store_true', dest = 'force', default = False,
                             help = 'Create references again for tests that already have references')

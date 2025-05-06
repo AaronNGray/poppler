@@ -19,10 +19,9 @@ from __future__ import absolute_import, division, print_function
 
 from threading import Lock, Condition
 from collections import deque
-import sys
 
 class InterruptibleQueue:
-    """Simpler implementation of Queue that uses wait with a timeout to make join interruptile"""
+    """Simpler implementation of Queue that uses wait with a timeout to make join interruptible"""
 
     def __init__(self):
         self._queue = deque()
@@ -45,7 +44,7 @@ class InterruptibleQueue:
         self._finished_condition.acquire()
         try:
             while self._n_unfinished_tasks:
-                self._finished_condition.wait(sys.float_info.max)
+                self._finished_condition.wait()
         finally:
             self._finished_condition.release()
 

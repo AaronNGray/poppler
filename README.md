@@ -71,6 +71,10 @@ from XPDF and which became the basis for Poppler.
 [Cairo]: https://www.cairographics.org/
 [Qt5]: https://www.qt.io/
 
+# Automated regression testing for the renderers
+
+TODO
+
 # History and GPL licensing
 
 Poppler is a fork of the xpdf PDF viewer developed by Derek Noonburg
