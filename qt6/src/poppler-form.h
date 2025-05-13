@@ -928,6 +928,8 @@ public:
      */
     SigningResult sign(const QString &outputFileName, const PDFConverter::NewSignatureData &data) const;
 
+    ErrorString lastSigningErrorDetails() const;
+
 private:
     Q_DISABLE_COPY(FormFieldSignature)
 };

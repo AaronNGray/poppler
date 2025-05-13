@@ -112,6 +112,24 @@ using PopplerDebugFunc = void (*)(const QString & /*message*/, const QVariant & 
 POPPLER_QT5_EXPORT void setDebugErrorFunction(PopplerDebugFunc debugFunction, const QVariant &closure);
 
 /**
+ * The various types of error strings.
+ */
+enum class ErrorStringType
+{
+    /**The string should be treated like a error cod. It could be a hex code, a position in the poppler sources or something similar*/
+    ErrorCodeString,
+    /**The string should be treated as an advanced error message that can be shown to user */
+    UserString
+};
+
+/** Combination of an error data and type of error string */
+struct ErrorString
+{
+    QVariant data;
+    ErrorStringType type;
+};
+
+/**
     Describes the physical location of text on a document page
 
     This very simple class describes the physical location of text
@@ -2383,6 +2401,25 @@ public:
         \since 21.01
     */
     bool sign(const NewSignatureData &data);
+
+    /**
+     * \since 25.03
+     *
+     * BIC/SIC: Merge with SigningResult in poppler-converter and in poppler-annotation and poppler-form
+     */
+    enum SigningResult
+    {
+        SigningSuccess, ///< No error
+        FieldAlreadySigned, ///< Trying to sign a field that is already signed
+        GenericSigningError, ///< Unclassified error
+        InternalError, ///< Unexpected error, likely a bug in poppler \since 24.12
+        KeyMissing, ///< Key not found (Either the input key is not from the list or the available keys has changed underneath) \since 24.12
+        WriteFailed, ///< Write failed (permissions, faulty disk, ...) \since 24.12
+        UserCancelled, ///< User cancelled the process \since 24.12
+        BadPassphrase, ///< User entered bad passphrase \since 25.03
+    };
+    SigningResult lastSigningResult() const;
+    ErrorString lastSigningErrorDetails() const;
 
     bool convert() override;
 
