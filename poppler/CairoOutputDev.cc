@@ -1401,10 +1401,10 @@ bool CairoOutputDev::tilingPatternFill(GfxState *state, Gfx *gfxA, Catalog *cat,
     cairo_matrix_t matrix;
     cairo_matrix_t pattern_matrix;
     cairo_t *old_cairo;
-    double xMin, yMin, xMax, yMax;
-    double width, height;
+    double bbox_width, bbox_height;
     double scaleX, scaleY;
     int surface_width, surface_height;
+    double xMin, yMin, xMax, yMax;
     StrokePathClip *strokePathTmp;
     bool adjusted_stroke_width_tmp;
     cairo_pattern_t *maskTmp;
@@ -1414,38 +1414,47 @@ bool CairoOutputDev::tilingPatternFill(GfxState *state, Gfx *gfxA, Catalog *cat,
     Dict *resDict = tPat->getResDict();
     Object *str = tPat->getContentStream();
 
-    width = bbox[2] - bbox[0];
-    height = bbox[3] - bbox[1];
+    xStep = std::fabs(xStep);
+    yStep = std::fabs(yStep);
 
-    if (xStep != width || yStep != height) {
+    if (xStep == 0 || yStep == 0) {
         return false;
     }
-    /* TODO: implement the other cases here too */
+
+    bbox_width = bbox[2] - bbox[0];
+    bbox_height = bbox[3] - bbox[1];
+
+    // Note: we render our pattern at the final (scaled) size - this is in case
+    // the intermediate surface is a raster surface, in which case scaling it after
+    // drawing might lead to poor results.
 
     // Find the width and height of the transformed pattern
     cairo_get_matrix(cairo, &matrix);
     cairo_matrix_init(&pattern_matrix, mat[0], mat[1], mat[2], mat[3], mat[4], mat[5]);
     cairo_matrix_multiply(&matrix, &matrix, &pattern_matrix);
 
-    double widthX = width, widthY = 0;
+    double widthX = bbox_width, widthY = 0;
     cairo_matrix_transform_distance(&matrix, &widthX, &widthY);
     surface_width = ceil(sqrt(widthX * widthX + widthY * widthY));
 
-    double heightX = 0, heightY = height;
+    double heightX = 0, heightY = bbox_height;
     cairo_matrix_transform_distance(&matrix, &heightX, &heightY);
     surface_height = ceil(sqrt(heightX * heightX + heightY * heightY));
-    scaleX = surface_width / width;
-    scaleY = surface_height / height;
+    scaleX = surface_width / bbox_width;
+    scaleY = surface_height / bbox_height;
 
-    surface = cairo_surface_create_similar(cairo_get_target(cairo), CAIRO_CONTENT_COLOR_ALPHA, surface_width, surface_height);
+    old_cairo = cairo;
+    // Make a surface the size of the scaled bounding box to draw the shape on.
+    surface = cairo_surface_create_similar(cairo_get_target(old_cairo), CAIRO_CONTENT_COLOR_ALPHA, surface_width, surface_height);
     if (cairo_surface_status(surface)) {
         return false;
     }
 
-    old_cairo = cairo;
     cairo = cairo_create(surface);
     cairo_surface_destroy(surface);
     copyAntialias(cairo, old_cairo);
+    // Make sure the new cairo object has the new line width (maybe updateAll for the entire graphics state?)
+    updateLineWidth(state);
 
     box.x1 = bbox[0];
     box.y1 = bbox[1];
@@ -1472,12 +1481,89 @@ bool CairoOutputDev::tilingPatternFill(GfxState *state, Gfx *gfxA, Catalog *cat,
     adjusted_stroke_width = adjusted_stroke_width_tmp;
     mask = maskTmp;
 
+    // Make a pattern from the content we've drawn.
     pattern = cairo_pattern_create_for_surface(cairo_get_target(cairo));
+
     cairo_destroy(cairo);
-    cairo = old_cairo;
     if (cairo_pattern_status(pattern)) {
         return false;
     }
+
+    // If our bounding box size is the same as our xStep and yStep (within some tolerance),
+    // then we can tile it directly.
+    // Otherwise, we need to make a new tiling cell that is the size of xStep and yStep and
+    // draw our current pattern into it.
+    if (std::fabs(bbox_width - xStep) / xStep > 0.001 || std::fabs(bbox_height - yStep) / yStep > 0.001) {
+        // Now, make a surface the size of the repeating cell on which to draw the pattern.
+        // Because the surface needs to have integer dimensions, we need to determine a new scale
+        // for the combined pattern and rescale our single cell pattern appropriately when drawing it.
+        double old_scaleX = scaleX;
+        double old_scaleY = scaleY;
+        double rescale_x, rescale_y;
+        surface_width = ceil(xStep * scaleX);
+        surface_height = ceil(yStep * scaleY);
+        scaleX = surface_width / xStep;
+        scaleY = surface_height / yStep;
+        rescale_x = old_scaleX / scaleX;
+        rescale_y = old_scaleY / scaleY;
+        surface = cairo_surface_create_similar(cairo_get_target(old_cairo), CAIRO_CONTENT_COLOR_ALPHA, surface_width, surface_height);
+        if (cairo_surface_status(surface)) {
+            return false;
+        }
+        cairo = cairo_create(surface);
+        cairo_surface_destroy(surface);
+        copyAntialias(cairo, old_cairo);
+        // To tile this pattern, imagine having a grid with cell size xStep and yStep.
+        // At each grid point we should draw the pattern's content.
+        // If the pattern is larger than the grid cell size, then each cell will need to know
+        // the content from neighboring cells that may spill into it.
+        //
+        // Our current pattern has the bounding box set at the coordinate origin.
+        // This means that it only contains content in the positive x and y directions.
+        // That means that the only cells that can spill into the one we are drawing are
+        // those that are in the negative x and y directions from it. Once we've gone
+        // in those directions far enough to move past the bounding box, there are no
+        // more potential overlaps.
+        //
+        // One more wrinkle is that the bounding box may be offset from the base cell.
+        // So, we determine the smallest positive offset and start drawing/moving from there.
+        double x = std::fmod(box.x1, xStep);
+        if (x < 0) {
+            x += xStep;
+        }
+        double y = std::fmod(box.y1, yStep);
+        if (y < 0) {
+            y += yStep;
+        }
+        // Moving down and to the left, draw repeats of the pattern on the same surface
+        // as needed.
+        for (double i = -x; i < bbox_width; i += xStep) {
+            for (double j = -y; j < bbox_height; j += yStep) {
+                cairo_rectangle(cairo, 0, 0, surface_width, surface_height);
+                cairo_matrix_init_scale(&matrix, rescale_x, rescale_y);
+                cairo_matrix_translate(&matrix, i * scaleX, j * scaleY);
+                cairo_pattern_set_matrix(pattern, &matrix);
+                cairo_set_source(cairo, pattern);
+                cairo_fill(cairo);
+            }
+        }
+        // Destroy the old pattern.
+        cairo_pattern_destroy(pattern);
+        pattern = cairo_pattern_create_for_surface(cairo_get_target(cairo));
+        cairo_destroy(cairo);
+        if (cairo_pattern_status(pattern)) {
+            return false;
+        }
+        cairo_matrix_init_scale(&matrix, scaleX, scaleY);
+        cairo_pattern_set_matrix(pattern, &matrix);
+    } else {
+        // This pattern should be translated to
+        // match where the boundary box starts.
+        cairo_matrix_init_scale(&matrix, scaleX, scaleY);
+        cairo_matrix_translate(&matrix, -box.x1, -box.y1);
+        cairo_pattern_set_matrix(pattern, &matrix);
+    }
+    cairo = old_cairo;
 
     // Cairo can fail if the pattern translation is too large. Fix by making the
     // translation smaller.
@@ -1501,10 +1587,6 @@ bool CairoOutputDev::tilingPatternFill(GfxState *state, Gfx *gfxA, Catalog *cat,
 
     state->getUserClipBBox(&xMin, &yMin, &xMax, &yMax);
     cairo_rectangle(cairo, xMin, yMin, xMax - xMin, yMax - yMin);
-
-    cairo_matrix_init_scale(&matrix, scaleX, scaleY);
-    cairo_matrix_translate(&matrix, -box.x1, -box.y1);
-    cairo_pattern_set_matrix(pattern, &matrix);
 
     cairo_transform(cairo, &pattern_matrix);
     cairo_set_source(cairo, pattern);
