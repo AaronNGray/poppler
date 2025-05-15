@@ -140,30 +140,30 @@
 // = (4 * (sqrt(2) - 1) / 3) * r
 #define bezierCircle 0.55228475
 
-static AnnotLineEndingStyle parseAnnotLineEndingStyle(const GooString *string)
+static AnnotLineEndingStyle parseAnnotLineEndingStyle(const Object &name)
 {
-    if (string != nullptr) {
-        if (!string->cmp("Square")) {
-            return annotLineEndingSquare;
-        } else if (!string->cmp("Circle")) {
-            return annotLineEndingCircle;
-        } else if (!string->cmp("Diamond")) {
-            return annotLineEndingDiamond;
-        } else if (!string->cmp("OpenArrow")) {
-            return annotLineEndingOpenArrow;
-        } else if (!string->cmp("ClosedArrow")) {
-            return annotLineEndingClosedArrow;
-        } else if (!string->cmp("Butt")) {
-            return annotLineEndingButt;
-        } else if (!string->cmp("ROpenArrow")) {
-            return annotLineEndingROpenArrow;
-        } else if (!string->cmp("RClosedArrow")) {
-            return annotLineEndingRClosedArrow;
-        } else if (!string->cmp("Slash")) {
-            return annotLineEndingSlash;
-        } else {
-            return annotLineEndingNone;
-        }
+    if (!name.isName()) {
+        return annotLineEndingNone;
+    }
+
+    if (name.isName("Square")) {
+        return annotLineEndingSquare;
+    } else if (name.isName("Circle")) {
+        return annotLineEndingCircle;
+    } else if (name.isName("Diamond")) {
+        return annotLineEndingDiamond;
+    } else if (name.isName("OpenArrow")) {
+        return annotLineEndingOpenArrow;
+    } else if (name.isName("ClosedArrow")) {
+        return annotLineEndingClosedArrow;
+    } else if (name.isName("Butt")) {
+        return annotLineEndingButt;
+    } else if (name.isName("ROpenArrow")) {
+        return annotLineEndingROpenArrow;
+    } else if (name.isName("RClosedArrow")) {
+        return annotLineEndingRClosedArrow;
+    } else if (name.isName("Slash")) {
+        return annotLineEndingSlash;
     } else {
         return annotLineEndingNone;
     }
@@ -2088,7 +2088,7 @@ void Annot::setNewAppearance(Object &&newAppearance, bool keepAppearState)
         appearStreams = std::make_unique<AnnotAppearance>(doc, &updatedAP);
 
         if (keepAppearState && !oldAS.isNull()) {
-            appearState = std::make_unique<GooString>(oldAS.getName());
+            appearState = std::make_unique<GooString>(oldAS.getNameString());
             update("AS", std::move(oldAS));
         } else {
             update("AS", Object(objName, "N"));
@@ -2334,9 +2334,9 @@ void AnnotText::initialize(PDFDoc *docA, Dict *dict)
 
     obj1 = dict->lookup("Name");
     if (obj1.isName()) {
-        icon = std::make_unique<GooString>(obj1.getName());
+        icon = obj1.getNameString();
     } else {
-        icon = std::make_unique<GooString>("Note");
+        icon = std::string { "Note" };
     }
 
     obj1 = dict->lookup("StateModel");
@@ -2409,19 +2409,19 @@ void AnnotText::setOpen(bool openA)
     update("Open", Object(open));
 }
 
-void AnnotText::setIcon(GooString *new_icon)
+void AnnotText::setIcon(const std::string &new_icon)
 {
-    if (new_icon && icon->cmp(new_icon) == 0) {
+    if (icon == new_icon) {
         return;
     }
 
-    if (new_icon) {
-        icon = new_icon->copy();
+    if (!new_icon.empty()) {
+        icon = new_icon;
     } else {
-        icon = std::make_unique<GooString>("Note");
+        icon = "Note";
     }
 
-    update("Name", Object(objName, icon->c_str()));
+    update("Name", Object(objName, icon.c_str()));
     invalidateAppearance();
 }
 
@@ -2689,23 +2689,23 @@ void AnnotText::draw(Gfx *gfx, bool printing)
         } else {
             appearBuilder.append("1 1 1 rg\n");
         }
-        if (!icon->cmp("Note")) {
+        if (icon == std::string_view("Note")) {
             appearBuilder.append(ANNOT_TEXT_AP_NOTE);
-        } else if (!icon->cmp("Comment")) {
+        } else if (icon == std::string_view("Comment")) {
             appearBuilder.append(ANNOT_TEXT_AP_COMMENT);
-        } else if (!icon->cmp("Key")) {
+        } else if (icon == std::string_view("Key")) {
             appearBuilder.append(ANNOT_TEXT_AP_KEY);
-        } else if (!icon->cmp("Help")) {
+        } else if (icon == std::string_view("Help")) {
             appearBuilder.append(ANNOT_TEXT_AP_HELP);
-        } else if (!icon->cmp("NewParagraph")) {
+        } else if (icon == std::string_view("NewParagraph")) {
             appearBuilder.append(ANNOT_TEXT_AP_NEW_PARAGRAPH);
-        } else if (!icon->cmp("Paragraph")) {
+        } else if (icon == std::string_view("Paragraph")) {
             appearBuilder.append(ANNOT_TEXT_AP_PARAGRAPH);
-        } else if (!icon->cmp("Insert")) {
+        } else if (icon == std::string_view("Insert")) {
             appearBuilder.append(ANNOT_TEXT_AP_INSERT);
-        } else if (!icon->cmp("Cross")) {
+        } else if (icon == std::string_view("Cross")) {
             appearBuilder.append(ANNOT_TEXT_AP_CROSS);
-        } else if (!icon->cmp("Circle")) {
+        } else if (icon == std::string_view("Circle")) {
             appearBuilder.append(ANNOT_TEXT_AP_CIRCLE);
         }
         appearBuilder.append("Q\n");
@@ -2921,8 +2921,7 @@ void AnnotFreeText::initialize(PDFDoc *docA, Dict *dict)
 
     obj1 = dict->lookup("LE");
     if (obj1.isName()) {
-        GooString styleName(obj1.getName());
-        endStyle = parseAnnotLineEndingStyle(&styleName);
+        endStyle = parseAnnotLineEndingStyle(obj1);
     } else {
         endStyle = annotLineEndingNone;
     }
@@ -3449,16 +3448,14 @@ void AnnotLine::initialize(PDFDoc *docA, Dict *dict)
 
         obj2 = obj1.arrayGet(0);
         if (obj2.isName()) {
-            GooString leName(obj2.getName());
-            startStyle = parseAnnotLineEndingStyle(&leName);
+            startStyle = parseAnnotLineEndingStyle(obj2);
         } else {
             startStyle = annotLineEndingNone;
         }
 
         obj2 = obj1.arrayGet(1);
         if (obj2.isName()) {
-            GooString leName(obj2.getName());
-            endStyle = parseAnnotLineEndingStyle(&leName);
+            endStyle = parseAnnotLineEndingStyle(obj2);
         } else {
             endStyle = annotLineEndingNone;
         }
@@ -3885,14 +3882,13 @@ void AnnotTextMarkup::initialize(PDFDoc *docA, Dict *dict)
 
     obj1 = dict->lookup("Subtype");
     if (obj1.isName()) {
-        GooString typeName(obj1.getName());
-        if (!typeName.cmp("Highlight")) {
+        if (obj1.isName("Highlight")) {
             type = typeHighlight;
-        } else if (!typeName.cmp("Underline")) {
+        } else if (obj1.isName("Underline")) {
             type = typeUnderline;
-        } else if (!typeName.cmp("Squiggly")) {
+        } else if (obj1.isName("Squiggly")) {
             type = typeSquiggly;
-        } else if (!typeName.cmp("StrikeOut")) {
+        } else if (obj1.isName("StrikeOut")) {
             type = typeStrikeOut;
         }
     }
@@ -5763,9 +5759,9 @@ void AnnotStamp::initialize(PDFDoc *docA, Dict *dict)
 {
     Object obj1 = dict->lookup("Name");
     if (obj1.isName()) {
-        icon = std::make_unique<GooString>(obj1.getName());
+        icon = obj1.getNameString();
     } else {
-        icon = std::make_unique<GooString>("Draft");
+        icon = std::string { "Draft" };
     }
 
     stampImageHelper = nullptr;
@@ -5830,67 +5826,67 @@ void AnnotStamp::generateStampDefaultAppearance()
     double stampUnscaledWidth;
     double stampUnscaledHeight;
     const char *stampCode;
-    if (!icon->cmp("Approved")) {
+    if (icon == std::string_view("Approved")) {
         stampUnscaledWidth = ANNOT_STAMP_APPROVED_WIDTH;
         stampUnscaledHeight = ANNOT_STAMP_APPROVED_HEIGHT;
         stampCode = ANNOT_STAMP_APPROVED;
         extGStateDict = getApprovedStampExtGStateDict(doc);
-    } else if (!icon->cmp("AsIs")) {
+    } else if (icon == std::string_view("AsIs")) {
         stampUnscaledWidth = ANNOT_STAMP_AS_IS_WIDTH;
         stampUnscaledHeight = ANNOT_STAMP_AS_IS_HEIGHT;
         stampCode = ANNOT_STAMP_AS_IS;
         extGStateDict = getAsIsStampExtGStateDict(doc);
-    } else if (!icon->cmp("Confidential")) {
+    } else if (icon == std::string_view("Confidential")) {
         stampUnscaledWidth = ANNOT_STAMP_CONFIDENTIAL_WIDTH;
         stampUnscaledHeight = ANNOT_STAMP_CONFIDENTIAL_HEIGHT;
         stampCode = ANNOT_STAMP_CONFIDENTIAL;
         extGStateDict = getConfidentialStampExtGStateDict(doc);
-    } else if (!icon->cmp("Final")) {
+    } else if (icon == std::string_view("Final")) {
         stampUnscaledWidth = ANNOT_STAMP_FINAL_WIDTH;
         stampUnscaledHeight = ANNOT_STAMP_FINAL_HEIGHT;
         stampCode = ANNOT_STAMP_FINAL;
         extGStateDict = getFinalStampExtGStateDict(doc);
-    } else if (!icon->cmp("Experimental")) {
+    } else if (icon == std::string_view("Experimental")) {
         stampUnscaledWidth = ANNOT_STAMP_EXPERIMENTAL_WIDTH;
         stampUnscaledHeight = ANNOT_STAMP_EXPERIMENTAL_HEIGHT;
         stampCode = ANNOT_STAMP_EXPERIMENTAL;
         extGStateDict = getExperimentalStampExtGStateDict(doc);
-    } else if (!icon->cmp("Expired")) {
+    } else if (icon == std::string_view("Expired")) {
         stampUnscaledWidth = ANNOT_STAMP_EXPIRED_WIDTH;
         stampUnscaledHeight = ANNOT_STAMP_EXPIRED_HEIGHT;
         stampCode = ANNOT_STAMP_EXPIRED;
         extGStateDict = getExpiredStampExtGStateDict(doc);
-    } else if (!icon->cmp("NotApproved")) {
+    } else if (icon == std::string_view("NotApproved")) {
         stampUnscaledWidth = ANNOT_STAMP_NOT_APPROVED_WIDTH;
         stampUnscaledHeight = ANNOT_STAMP_NOT_APPROVED_HEIGHT;
         stampCode = ANNOT_STAMP_NOT_APPROVED;
         extGStateDict = getNotApprovedStampExtGStateDict(doc);
-    } else if (!icon->cmp("NotForPublicRelease")) {
+    } else if (icon == std::string_view("NotForPublicRelease")) {
         stampUnscaledWidth = ANNOT_STAMP_NOT_FOR_PUBLIC_RELEASE_WIDTH;
         stampUnscaledHeight = ANNOT_STAMP_NOT_FOR_PUBLIC_RELEASE_HEIGHT;
         stampCode = ANNOT_STAMP_NOT_FOR_PUBLIC_RELEASE;
         extGStateDict = getNotForPublicReleaseStampExtGStateDict(doc);
-    } else if (!icon->cmp("Sold")) {
+    } else if (icon == std::string_view("Sold")) {
         stampUnscaledWidth = ANNOT_STAMP_SOLD_WIDTH;
         stampUnscaledHeight = ANNOT_STAMP_SOLD_HEIGHT;
         stampCode = ANNOT_STAMP_SOLD;
         extGStateDict = getSoldStampExtGStateDict(doc);
-    } else if (!icon->cmp("Departmental")) {
+    } else if (icon == std::string_view("Departmental")) {
         stampUnscaledWidth = ANNOT_STAMP_DEPARTMENTAL_WIDTH;
         stampUnscaledHeight = ANNOT_STAMP_DEPARTMENTAL_HEIGHT;
         stampCode = ANNOT_STAMP_DEPARTMENTAL;
         extGStateDict = getDepartmentalStampExtGStateDict(doc);
-    } else if (!icon->cmp("ForComment")) {
+    } else if (icon == std::string_view("ForComment")) {
         stampUnscaledWidth = ANNOT_STAMP_FOR_COMMENT_WIDTH;
         stampUnscaledHeight = ANNOT_STAMP_FOR_COMMENT_HEIGHT;
         stampCode = ANNOT_STAMP_FOR_COMMENT;
         extGStateDict = getForCommentStampExtGStateDict(doc);
-    } else if (!icon->cmp("ForPublicRelease")) {
+    } else if (icon == std::string_view("ForPublicRelease")) {
         stampUnscaledWidth = ANNOT_STAMP_FOR_PUBLIC_RELEASE_WIDTH;
         stampUnscaledHeight = ANNOT_STAMP_FOR_PUBLIC_RELEASE_HEIGHT;
         stampCode = ANNOT_STAMP_FOR_PUBLIC_RELEASE;
         extGStateDict = getForPublicReleaseStampExtGStateDict(doc);
-    } else if (!icon->cmp("TopSecret")) {
+    } else if (icon == std::string_view("TopSecret")) {
         stampUnscaledWidth = ANNOT_STAMP_TOP_SECRET_WIDTH;
         stampUnscaledHeight = ANNOT_STAMP_TOP_SECRET_HEIGHT;
         stampCode = ANNOT_STAMP_TOP_SECRET;
@@ -5939,15 +5935,11 @@ void AnnotStamp::draw(Gfx *gfx, bool printing)
     }
 }
 
-void AnnotStamp::setIcon(GooString *new_icon)
+void AnnotStamp::setIcon(const std::string &new_icon)
 {
-    if (new_icon) {
-        icon = new_icon->copy();
-    } else {
-        icon = std::make_unique<GooString>();
-    }
+    icon = new_icon;
 
-    update("Name", Object(objName, icon->c_str()));
+    update("Name", Object(objName, icon.c_str()));
     invalidateAppearance();
 }
 
@@ -6011,10 +6003,9 @@ void AnnotGeometry::initialize(PDFDoc *docA, Dict *dict)
 
     obj1 = dict->lookup("Subtype");
     if (obj1.isName()) {
-        GooString typeName(obj1.getName());
-        if (!typeName.cmp("Square")) {
+        if (obj1.isName("Square")) {
             type = typeSquare;
-        } else if (!typeName.cmp("Circle")) {
+        } else if (obj1.isName("Circle")) {
             type = typeCircle;
         }
     }
@@ -6180,10 +6171,9 @@ void AnnotPolygon::initialize(PDFDoc *docA, Dict *dict)
 
     obj1 = dict->lookup("Subtype");
     if (obj1.isName()) {
-        GooString typeName(obj1.getName());
-        if (!typeName.cmp("Polygon")) {
+        if (obj1.isName("Polygon")) {
             type = typePolygon;
-        } else if (!typeName.cmp("PolyLine")) {
+        } else if (obj1.isName("PolyLine")) {
             type = typePolyLine;
         }
     }
@@ -6201,15 +6191,13 @@ void AnnotPolygon::initialize(PDFDoc *docA, Dict *dict)
     if (obj1.isArray() && obj1.arrayGetLength() == 2) {
         Object obj2 = obj1.arrayGet(0);
         if (obj2.isName()) {
-            const GooString leName(obj2.getName());
-            startStyle = parseAnnotLineEndingStyle(&leName);
+            startStyle = parseAnnotLineEndingStyle(obj2);
         } else {
             startStyle = annotLineEndingNone;
         }
         obj2 = obj1.arrayGet(1);
         if (obj2.isName()) {
-            const GooString leName(obj2.getName());
-            endStyle = parseAnnotLineEndingStyle(&leName);
+            endStyle = parseAnnotLineEndingStyle(obj2);
         } else {
             endStyle = annotLineEndingNone;
         }
@@ -6501,10 +6489,9 @@ void AnnotCaret::initialize(PDFDoc *docA, Dict *dict)
     symbol = symbolNone;
     obj1 = dict->lookup("Sy");
     if (obj1.isName()) {
-        GooString typeName(obj1.getName());
-        if (!typeName.cmp("P")) {
+        if (obj1.isName("P")) {
             symbol = symbolP;
-        } else if (!typeName.cmp("None")) {
+        } else if (obj1.isName("None")) {
             symbol = symbolNone;
         }
     }
@@ -6708,7 +6695,7 @@ void AnnotFileAttachment::initialize(PDFDoc *docA, Dict *dict)
 
     Object objName = dict->lookup("Name");
     if (objName.isName()) {
-        name = std::make_unique<GooString>(objName.getName());
+        name = std::make_unique<GooString>(objName.getNameString());
     } else {
         name = std::make_unique<GooString>("PushPin");
     }
