@@ -304,12 +304,13 @@ std::variant<std::vector<unsigned char>, CryptoSign::SigningError> GpgSignatureC
 
     auto signatureString = signatureData.toString();
     if (protocol == GpgME::OpenPGP) {
-        // We need to prepare for padding PGP doesn't like padding as such
-        // so we disguise it as a comment packet.
-        // the size of the comment packet prefix and size is the first 6 bytes.
+        // We need to pad.  The OpenPGP padding packet is type ID 21
+        // (https://www.rfc-editor.org/rfc/rfc9580.html#section-5.14)
+        // the size of the comment packet prefix and size is the first
+        // 6 bytes.
         static const int prefixandsize = 6;
         std::string prefix { std::initializer_list<char> {
-                (char)0xfd,
+                (char)(0x0c | 21),
                 (char)0xff,
         } };
 
