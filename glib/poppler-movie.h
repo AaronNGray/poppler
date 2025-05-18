@@ -78,4 +78,6 @@ void poppler_movie_get_aspect(PopplerMovie *poppler_movie, gint *width, gint *he
 
 G_END_DECLS
 
+G_DEFINE_AUTOPTR_CLEANUP_FUNC(PopplerMovie, g_object_unref)
+
 #endif /* __POPPLER_MOVIE_H__ */

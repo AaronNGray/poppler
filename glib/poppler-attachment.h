@@ -120,4 +120,6 @@ gboolean poppler_attachment_save_to_callback(PopplerAttachment *attachment, Popp
 
 G_END_DECLS
 
+G_DEFINE_AUTOPTR_CLEANUP_FUNC(PopplerAttachment, g_object_unref)
+
 #endif /* __POPPLER_ATTACHMENT_H__ */
