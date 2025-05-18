@@ -54,6 +54,7 @@
 #include "poppler-config.h"
 #include "poppler_private_export.h"
 #include "Object.h"
+#include "LockedResource.h"
 
 class GooFile;
 class BaseStream;
@@ -111,7 +112,7 @@ typedef struct _ByteRange
 // Stream (base class)
 //------------------------------------------------------------------------
 
-class POPPLER_PRIVATE_EXPORT Stream
+class POPPLER_PRIVATE_EXPORT Stream : LockableResource
 {
 public:
     // Constructor.
@@ -122,6 +123,11 @@ public:
 
     Stream(const Stream &) = delete;
     Stream &operator=(const Stream &other) = delete;
+
+    // Returns the stream locked with a recursive lock.
+    [[nodiscard]] LockedResource<Stream> locked() {
+        return LockedResource<Stream>(this);
+    }
 
     // Get kind of stream.
     virtual StreamKind getKind() const = 0;
@@ -272,6 +278,7 @@ public:
 
 private:
     friend class Object; // for incRef/decRef
+    friend LockedResource<Stream>; // for lock/unlock
 
     // Reference counting.
     int incRef() { return ++ref; }

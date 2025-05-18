@@ -2303,23 +2303,34 @@ void FormFieldSignature::parseInfo()
     }
 }
 
-void FormFieldSignature::hashSignedDataBlock(CryptoSign::VerificationInterface *handler, Goffset block_len)
+void FormFieldSignature::hashSignedDataBlock(CryptoSign::VerificationInterface *handler, Goffset start_offset, Goffset block_len)
 {
-    if (!handler) {
-        return;
-    }
     const int BLOCK_SIZE = 4096;
     unsigned char signed_data_buffer[BLOCK_SIZE];
+
+    // We need to ensure that other threads won't change the doc stream while
+    // we're going through it, so protect the stream by getting the locked
+    // stream item.
 
     Goffset i = 0;
     while (i < block_len) {
         Goffset bytes_left = block_len - i;
         if (bytes_left < BLOCK_SIZE) {
-            doc->getBaseStream()->doGetChars(static_cast<int>(bytes_left), signed_data_buffer);
+            {
+                auto locked_stream = doc->getBaseStream()->locked();
+                locked_stream->setPos(start_offset + i);
+                locked_stream->doGetChars(static_cast<int>(bytes_left), signed_data_buffer);
+            }
+
             handler->addData(signed_data_buffer, static_cast<int>(bytes_left));
             i = block_len;
         } else {
-            doc->getBaseStream()->doGetChars(BLOCK_SIZE, signed_data_buffer);
+            {
+                auto locked_stream = doc->getBaseStream()->locked();
+                locked_stream->getBaseStream()->setPos(start_offset + i);
+                locked_stream->getBaseStream()->doGetChars(BLOCK_SIZE, signed_data_buffer);
+            }
+
             handler->addData(signed_data_buffer, BLOCK_SIZE);
             i += BLOCK_SIZE;
         }
@@ -2410,8 +2421,7 @@ SignatureInfo *FormFieldSignature::validateSignatureAsync(bool doVerifyCert, boo
             return signature_info;
         }
 
-        doc->getBaseStream()->setPos(offset);
-        hashSignedDataBlock(signature_handler.get(), len);
+        hashSignedDataBlock(signature_handler.get(), offset, len);
     }
 
     if (!signature_info->isSubfilterSupported()) {
