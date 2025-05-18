@@ -450,7 +450,7 @@ LinkGoToR::LinkGoToR(Object *fileSpecObj, Object *destObj)
     // get file name
     Object obj1 = getFileSpecNameForPlatform(fileSpecObj);
     if (obj1.isString()) {
-        fileName = obj1.getString()->copy();
+        fileName = obj1.takeString();
     }
 
     // named destination
@@ -486,7 +486,7 @@ LinkLaunch::LinkLaunch(const Object *actionObj)
         if (!obj1.isNull()) {
             Object obj3 = getFileSpecNameForPlatform(&obj1);
             if (obj3.isString()) {
-                fileName = obj3.getString()->copy();
+                fileName = obj3.takeString();
             }
         } else {
 #ifdef _WIN32
@@ -500,11 +500,11 @@ LinkLaunch::LinkLaunch(const Object *actionObj)
                 Object obj2 = obj1.dictLookup("F");
                 Object obj3 = getFileSpecNameForPlatform(&obj2);
                 if (obj3.isString()) {
-                    fileName = obj3.getString()->copy();
+                    fileName = obj3.takeString();
                 }
                 obj2 = obj1.dictLookup("P");
                 if (obj2.isString()) {
-                    params = obj2.getString()->copy();
+                    params = obj2.takeString();
                 }
             } else {
                 error(errSyntaxWarning, -1, "Bad launch-type link action");

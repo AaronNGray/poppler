@@ -1144,17 +1144,17 @@ AnnotAppearanceCharacs::AnnotAppearanceCharacs(Dict *dict)
 
     obj1 = dict->lookup("CA");
     if (obj1.isString()) {
-        normalCaption = std::make_unique<GooString>(obj1.getString());
+        normalCaption = obj1.takeString();
     }
 
     obj1 = dict->lookup("RC");
     if (obj1.isString()) {
-        rolloverCaption = std::make_unique<GooString>(obj1.getString());
+        rolloverCaption = obj1.takeString();
     }
 
     obj1 = dict->lookup("AC");
     if (obj1.isString()) {
-        alternateCaption = std::make_unique<GooString>(obj1.getString());
+        alternateCaption = obj1.takeString();
     }
 
     obj1 = dict->lookup("IF");
@@ -1348,7 +1348,7 @@ void Annot::initialize(PDFDoc *docA, Dict *dict)
 
     obj1 = dict->lookup("Contents");
     if (obj1.isString()) {
-        contents = obj1.getString()->copy();
+        contents = obj1.takeString();
     } else {
         contents = std::make_unique<GooString>();
     }
@@ -1365,12 +1365,12 @@ void Annot::initialize(PDFDoc *docA, Dict *dict)
 
     obj1 = dict->lookup("NM");
     if (obj1.isString()) {
-        name = obj1.getString()->copy();
+        name = obj1.takeString();
     }
 
     obj1 = dict->lookup("M");
     if (obj1.isString()) {
-        modified = obj1.getString()->copy();
+        modified = obj1.takeString();
     }
 
     //----- get the flags
@@ -2173,7 +2173,7 @@ void AnnotMarkup::initialize(PDFDoc *docA, Dict *dict)
 
     obj1 = dict->lookup("T");
     if (obj1.isString()) {
-        label = obj1.getString()->copy();
+        label = obj1.takeString();
     }
 
     Object popupObj = dict->lookup("Popup");
@@ -2186,7 +2186,7 @@ void AnnotMarkup::initialize(PDFDoc *docA, Dict *dict)
 
     obj1 = dict->lookup("CreationDate");
     if (obj1.isString()) {
-        date = obj1.getString()->copy();
+        date = obj1.takeString();
     }
 
     const Object &irtObj = dict->lookupNF("IRT");
@@ -2198,7 +2198,7 @@ void AnnotMarkup::initialize(PDFDoc *docA, Dict *dict)
 
     obj1 = dict->lookup("Subj");
     if (obj1.isString()) {
-        subject = obj1.getString()->copy();
+        subject = obj1.takeString();
     }
 
     obj1 = dict->lookup("RT");
@@ -2851,7 +2851,7 @@ void AnnotFreeText::initialize(PDFDoc *docA, Dict *dict)
 
     obj1 = dict->lookup("DA");
     if (obj1.isString()) {
-        appearanceString = obj1.getString()->copy();
+        appearanceString = obj1.takeString();
     } else {
         appearanceString = std::make_unique<GooString>();
         error(errSyntaxWarning, -1, "Bad appearance for annotation");
@@ -2866,7 +2866,7 @@ void AnnotFreeText::initialize(PDFDoc *docA, Dict *dict)
 
     obj1 = dict->lookup("DS");
     if (obj1.isString()) {
-        styleString = obj1.getString()->copy();
+        styleString = obj1.takeString();
     }
 
     obj1 = dict->lookup("CL");
@@ -5585,7 +5585,7 @@ void AnnotMovie::initialize(PDFDoc *docA, Dict *dict)
 
     obj1 = dict->lookup("T");
     if (obj1.isString()) {
-        title = obj1.getString()->copy();
+        title = obj1.takeString();
     }
 
     Object movieDict = dict->lookup("Movie");
@@ -7281,7 +7281,7 @@ AnnotRichMedia::Content::Content(Dict *dict)
 
                 auto asset = std::make_unique<AnnotRichMedia::Asset>();
 
-                asset->name = std::make_unique<GooString>(objKey.getString());
+                asset->name = objKey.takeString();
                 asset->fileSpec = std::move(objVal);
                 assets.push_back(std::move(asset));
             }
@@ -7353,7 +7353,7 @@ AnnotRichMedia::Configuration::Configuration(Dict *dict)
 
     obj1 = dict->lookup("Name");
     if (obj1.isString()) {
-        name = std::make_unique<GooString>(obj1.getString());
+        name = obj1.takeString();
     }
 
     obj1 = dict->lookup("Subtype");
@@ -7460,7 +7460,7 @@ AnnotRichMedia::Params::Params(Dict *dict)
 {
     Object obj1 = dict->lookup("FlashVars");
     if (obj1.isString()) {
-        flashVars = std::make_unique<GooString>(obj1.getString());
+        flashVars = obj1.takeString();
     }
 }
 
