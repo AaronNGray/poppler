@@ -53,8 +53,10 @@ public:
 
     virtual bool downScaleImage(unsigned orig_width, unsigned orig_height, signed scaled_width, signed scaled_height, unsigned short int start_column, unsigned short int start_row, unsigned short int width, unsigned short int height,
                                 cairo_surface_t *dest_surface);
-
     virtual void getRow(int row_num, uint32_t *row_data) = 0;
+    virtual cairo_surface_t *downScaleImageA8(unsigned short int orig_width, unsigned short int orig_height, unsigned short int scaled_width, unsigned short int scaled_height, unsigned short int start_column, unsigned short int end_column,
+                                              unsigned short int start_row, unsigned short int end_row);
+    virtual void getRowA8(int row_num, uint8_t *row_data, unsigned short int startCol, unsigned short int endCol) = 0;
 };
 
 #endif /* CAIRO_RESCALE_BOX_H */
