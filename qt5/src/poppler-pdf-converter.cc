@@ -120,17 +120,22 @@ bool PDFConverter::convert()
 
 bool PDFConverter::sign(const NewSignatureData &data)
 {
+    return sign2(data) == SigningSuccess;
+}
+
+PDFConverter::SigningResult PDFConverter::sign2(const NewSignatureData &data)
+{
     Q_D(PDFConverter);
     d->lastError = NoError;
 
     if (d->document->locked) {
         d->lastError = FileLockedError;
-        return false;
+        return GenericSigningError;
     }
 
     if (data.signatureText().isEmpty()) {
         qWarning() << "No signature text given";
-        return false;
+        return GenericSigningError;
     }
 
     ::PDFDoc *doc = d->document->doc;
@@ -141,10 +146,28 @@ bool PDFConverter::sign(const NewSignatureData &data)
     const auto location = std::unique_ptr<GooString>(data.location().isEmpty() ? nullptr : QStringToUnicodeGooString(data.location()));
     const auto ownerPwd = std::optional<GooString>(data.documentOwnerPassword().constData());
     const auto userPwd = std::optional<GooString>(data.documentUserPassword().constData());
-    return !doc->sign(d->outputFileName.toUtf8().constData(), data.certNickname().toUtf8().constData(), data.password().toUtf8().constData(), QStringToGooString(data.fieldPartialName()), data.page() + 1,
-                      boundaryToPdfRectangle(destPage, data.boundingRectangle(), Annotation::FixedRotation), *gSignatureText, *gSignatureLeftText, data.fontSize(), data.leftFontSize(), convertQColor(data.fontColor()), data.borderWidth(),
-                      convertQColor(data.borderColor()), convertQColor(data.backgroundColor()), reason.get(), location.get(), data.imagePath().toStdString(), ownerPwd, userPwd)
-                    .has_value();
+    auto failure = doc->sign(d->outputFileName.toUtf8().constData(), data.certNickname().toUtf8().constData(), data.password().toUtf8().constData(), QStringToGooString(data.fieldPartialName()), data.page() + 1,
+                             boundaryToPdfRectangle(destPage, data.boundingRectangle(), Annotation::FixedRotation), *gSignatureText, *gSignatureLeftText, data.fontSize(), data.leftFontSize(), convertQColor(data.fontColor()),
+                             data.borderWidth(), convertQColor(data.borderColor()), convertQColor(data.backgroundColor()), reason.get(), location.get(), data.imagePath().toStdString(), ownerPwd, userPwd);
+    if (failure) {
+        switch (failure.value()) {
+        case CryptoSign::SigningError::GenericError:
+            return GenericSigningError;
+        case CryptoSign::SigningError::InternalError:
+            return InternalError;
+        case CryptoSign::SigningError::KeyMissing:
+            return KeyMissing;
+        case CryptoSign::SigningError::UserCancelled:
+            return UserCancelled;
+        case CryptoSign::SigningError::WriteFailed:
+            return WriteFailed;
+        case CryptoSign::SigningError::BadPassphrase:
+            return BadPassphrase;
+        }
+        return GenericSigningError; // catch all
+    } else {
+        return SigningSuccess;
+    }
 }
 
 struct PDFConverter::NewSignatureData::NewSignatureDataPrivate

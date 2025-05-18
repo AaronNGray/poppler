@@ -1234,8 +1234,10 @@ FormFieldSignature::SigningResult FormFieldSignature::sign(const QString &output
         case CryptoSign::SigningError::BadPassphrase:
             return BadPassphrase;
         }
+        return GenericSigningError; // catch all
+    } else {
+        return SigningSuccess;
     }
-    return SigningSuccess;
 }
 
 bool hasNSSSupport()

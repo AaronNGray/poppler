@@ -791,6 +791,8 @@ class POPPLER_QT6_EXPORT SignatureAnnotation : public Annotation
 public:
     /**
      * \since 24.10
+     *
+     * BIC/SIC: Merge with SigningResult in poppler-converter and in poppler-annotation and poppler-form
      */
     enum SigningResult
     {

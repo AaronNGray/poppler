@@ -438,15 +438,44 @@ public:
     };
 
     /**
+     * \since 25.03
+     *
+     * BIC/SIC: Merge with SigningResult in poppler-converter and in poppler-annotation and poppler-form
+     */
+    enum SigningResult
+    {
+        SigningSuccess, ///< No error
+        FieldAlreadySigned, ///< Trying to sign a field that is already signed
+        GenericSigningError, ///< Unclassified error
+        InternalError, ///< Unexpected error, likely a bug in poppler
+        KeyMissing, ///< Key not found (Either the input key is not from the list or the available keys has changed underneath)
+        WriteFailed, ///< Write failed (permissions, faulty disk, ...)
+        UserCancelled, ///< User cancelled the process
+        BadPassphrase, ///< User entered bad passphrase
+    };
+
+    /**
         Sign PDF at given Annotation / signature form
 
         \param data new signature data
 
         \return whether the signing succeeded
 
+        \deprecated use sign2 instead; has error codes
+
         \since 21.01
     */
-    bool sign(const NewSignatureData &data);
+    POPPLER_QT6_DEPRECATED bool sign(const NewSignatureData &data);
+    /**
+        Sign PDF at given Annotation / signature form
+
+        \param data new signature data
+
+        \return whether the signing succeeded
+
+        \since 25.03
+    */
+    SigningResult sign2(const NewSignatureData &data);
 
     bool convert() override;
 
