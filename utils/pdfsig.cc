@@ -31,6 +31,7 @@
 #include <ctime>
 #include <fstream>
 #include <random>
+#include <filesystem>
 #include "parseargs.h"
 #include "Object.h"
 #include "Array.h"
@@ -117,6 +118,43 @@ static char *getReadableTime(time_t unix_time)
     return time_str;
 }
 
+static std::string_view trim(std::string_view input)
+{
+    size_t first = input.find_first_not_of(" \t");
+    if (first == std::string_view::npos) {
+        return {};
+    }
+    size_t last = input.find_last_not_of(" \t");
+    return input.substr(first, last - first + 1);
+}
+
+static std::vector<std::string> parseAssertSignerFile(std::string_view input)
+{
+    std::fstream file(std::string { input });
+    std::vector<std::string> lines;
+    std::string line;
+    while (std::getline(file, line)) {
+        if (line.empty() || line[0] == '#') {
+            continue;
+        }
+
+        std::string_view trimmedLine = trim(line);
+
+        if (!trimmedLine.empty()) {
+            lines.emplace_back(std::string { trimmedLine });
+        }
+    }
+    return lines;
+}
+
+static std::vector<std::string> parseAssertSigner(std::string_view input)
+{
+    if (std::filesystem::exists(input)) {
+        return parseAssertSignerFile(input);
+    }
+    return std::vector<std::string> { std::string { input } };
+}
+
 static bool dumpSignature(int sig_num, int sigCount, FormFieldSignature *s, const char *filename)
 {
     const std::vector<unsigned char> &signature = s->getSignature();
@@ -161,6 +199,7 @@ static bool listNicknames = false;
 static bool addNewSignature = false;
 static bool useAIACertFetch = false;
 static GooString newSignatureFieldName;
+static char assertSigner[256] = "";
 
 static const ArgDesc argDesc[] = { { "-nssdir", argGooString, &nssDir, 0, "path to directory of libnss3 database" },
                                    { "-nss-pwd", argGooString, &nssPassword, 0, "password to access the NSS database (if any)" },
@@ -168,6 +207,9 @@ static const ArgDesc argDesc[] = { { "-nssdir", argGooString, &nssDir, 0, "path 
                                    { "-no-ocsp", argFlag, &noOCSPRevocationCheck, 0, "don't perform online OCSP certificate revocation check" },
                                    { "-no-appearance", argFlag, &noAppearance, 0, "don't add appearance information when signing existing fields" },
                                    { "-aia", argFlag, &useAIACertFetch, 0, "use Authority Information Access (AIA) extension for certificate fetching" },
+                                   { "-assert-signer", argString, &assertSigner, 256,
+                                     "This option checks whether the signature covering the full document been made with the specified key. The key is either specified as a fingerprint or a file listing fingerprints. The fingerprint must "
+                                     "be given or listed in compact format (no colons or spaces in between). If fpr_or_file specifies a file, empty lines are ignored as well as all lines starting with a hash sign." },
                                    { "-dump", argFlag, &dumpSignatures, 0, "dump all signatures into current directory" },
                                    { "-add-signature", argFlag, &addNewSignature, 0, "adds a new signature to the document" },
                                    { "-new-signature-field-name", argGooString, &newSignatureFieldName, 0, "field name used for the newly added signature. A random ID will be used if empty" },
@@ -584,6 +626,9 @@ int main(int argc, char *argv[])
         }
         signatureInfos[i] = ffs->validateSignatureAsync(!dontVerifyCert, false, -1 /* now */, !noOCSPRevocationCheck, useAIACertFetch, {});
     }
+    bool totalDocumentSigned = false;
+    bool oneSignatureInvalid = false;
+    std::string totalDocumentNick;
 
     for (unsigned int i = 0; i < sigCount; i++) {
         FormFieldSignature *ffs = signatures.at(i);
@@ -601,7 +646,15 @@ int main(int argc, char *argv[])
 
         const SignatureInfo *sig_info = signatureInfos[i];
         CertificateValidationStatus certificateStatus = ffs->validateSignatureResult();
+        if (sig_info->getSignatureValStatus() == SIGNATURE_DECODING_ERROR) {
+            printf("  - Decoding failed\n");
+            oneSignatureInvalid = true;
+            continue;
+        }
         printf("  - Signer Certificate Common Name: %s\n", sig_info->getSignerName().c_str());
+        if (CryptoSign::Factory::getActive() == CryptoSign::Backend::Type::GPGME) {
+            printf("  - Signer fingerprint: %s\n", sig_info->getCertificateInfo()->getNickName().c_str());
+        }
         printf("  - Signer full Distinguished Name: %s\n", sig_info->getSubjectDN().c_str());
         printf("  - Signing Time: %s\n", time_str = getReadableTime(sig_info->getSigningTime()));
         printf("  - Signing Hash Algorithm: ");
@@ -654,6 +707,14 @@ int main(int argc, char *argv[])
             Goffset checked_file_size;
             const std::optional<GooString> signature = signatures.at(i)->getCheckedSignature(&checked_file_size);
             if (signature && checked_file_size == ranges[3]) {
+                if (totalDocumentSigned) {
+                    printf("multiple signatures is covering entire document. Impossible");
+                    return 2;
+                }
+                if (sig_info->getCertificateInfo()) {
+                    totalDocumentSigned = true;
+                    totalDocumentNick = sig_info->getCertificateInfo()->getNickName().toStr();
+                }
                 printf("  - Total document signed\n");
             } else {
                 printf("  - Not total document signed\n");
@@ -661,11 +722,31 @@ int main(int argc, char *argv[])
         }
         printf("  - Signature Validation: %s\n", getReadableSigState(sig_info->getSignatureValStatus()));
         gfree(time_str);
-        if (sig_info->getSignatureValStatus() != SIGNATURE_VALID || dontVerifyCert) {
+        if (sig_info->getSignatureValStatus() != SIGNATURE_VALID) {
+            oneSignatureInvalid = true;
+            continue;
+        }
+        if (dontVerifyCert) {
             continue;
         }
         printf("  - Certificate Validation: %s\n", getReadableCertState(certificateStatus));
     }
 
-    return 0;
+    if (!oneSignatureInvalid) {
+        if (strlen(assertSigner) > 1 && CryptoSign::Factory::getActive() == CryptoSign::Backend::Type::GPGME) {
+            if (!totalDocumentSigned) {
+                printf("  - Assert signer: Total document not signed\n");
+                return 1;
+            }
+            std::vector<std::string> assertKeys = parseAssertSigner(assertSigner);
+            if (std::ranges::find(assertKeys, totalDocumentNick) == std::end(assertKeys)) {
+                printf("  - Assert signer: Key not in list\n");
+                // we do't have the key in the assert list, so error out
+                return 1;
+            }
+        }
+        return 0;
+    } else {
+        return 1;
+    }
 }
