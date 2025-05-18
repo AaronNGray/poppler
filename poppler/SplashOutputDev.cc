@@ -1920,7 +1920,7 @@ reload:
             if (!fileName.empty()) {
                 ff = FoFiTrueType::load(fileName.c_str(), fontLoc->fontNum);
             } else {
-                ff = FoFiTrueType::make(fontsrc->buf.data(), fontsrc->buf.size(), fontLoc->fontNum);
+                ff = FoFiTrueType::make(std::move(fontsrc->buf), fontLoc->fontNum);
             }
             std::vector<int> codeToGID;
             if (ff) {
@@ -1980,7 +1980,7 @@ reload:
                 if (!fileName.empty()) {
                     ff = FoFiTrueType::load(fileName.c_str(), fontLoc->fontNum);
                 } else {
-                    ff = FoFiTrueType::make(fontsrc->buf.data(), fontsrc->buf.size(), fontLoc->fontNum);
+                    ff = FoFiTrueType::make(std::move(fontsrc->buf), fontLoc->fontNum);
                 }
                 if (!ff) {
                     error(errSyntaxError, -1, "Couldn't create a font for '{0:s}'", gfxFont->getName() ? gfxFont->getName()->c_str() : "(unnamed)");
