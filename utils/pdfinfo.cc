@@ -46,6 +46,7 @@
 #include <map>
 #include <numbers>
 #include <set>
+#include <iostream>
 #include "parseargs.h"
 #include "printencodings.h"
 #include "goo/GooString.h"
@@ -74,6 +75,7 @@
 
 static int firstPage = 1;
 static int lastPage = 0;
+static bool jsonOutput = false;
 static bool printBoxes = false;
 static bool printMetadata = false;
 static bool printCustom = false;
@@ -96,6 +98,7 @@ static const ArgDesc argDesc[] = { { "-f", argInt, &firstPage, 0, "first page to
                                    { "-box", argFlag, &printBoxes, 0, "print the page bounding boxes" },
                                    { "-meta", argFlag, &printMetadata, 0, "print the document metadata (XML)" },
                                    { "-custom", argFlag, &printCustom, 0, "print both custom and standard metadata" },
+                                   { "-json", argFlag, &jsonOutput, 0, "output as JSON" },
                                    { "-js", argFlag, &printJS, 0, "print all JavaScript in the PDF" },
                                    { "-struct", argFlag, &printStructure, 0, "print the logical document structure (for tagged files)" },
                                    { "-struct-text", argFlag, &printStructureText, 0, "print text contents along with document structure (for tagged files)" },
@@ -114,14 +117,18 @@ static const ArgDesc argDesc[] = { { "-f", argInt, &firstPage, 0, "first page to
                                    { "-?", argFlag, &printHelp, 0, "print usage information" },
                                    {} };
 
-static void printStdTextString(const std::string &s, const UnicodeMap *uMap)
+static void printUCS4String(const std::vector<Unicode> &u, const UnicodeMap *uMap)
 {
     char buf[8];
-    const std::vector<Unicode> u = TextStringToUCS4(s);
     for (const auto &c : u) {
         int n = uMap->mapUnicode(c, buf, sizeof(buf));
         fwrite(buf, 1, n, stdout);
     }
+}
+
+static void printStdTextString(const std::string &s, const UnicodeMap *uMap)
+{
+    printUCS4String(TextStringToUCS4(s), uMap);
 }
 
 static void printTextString(const GooString *s, const UnicodeMap *uMap)
@@ -129,13 +136,76 @@ static void printTextString(const GooString *s, const UnicodeMap *uMap)
     printStdTextString(s->toStr(), uMap);
 }
 
-static void printUCS4String(const std::vector<Unicode> &u, const UnicodeMap *uMap)
+class PdfInfo
 {
-    char buf[8];
-    for (auto i : u) {
-        int n = uMap->mapUnicode(i, buf, sizeof(buf));
-        fwrite(buf, 1, n, stdout);
+    std::vector<std::pair<std::string, std::string>> content;
+
+public:
+    void add(const std::string &key, const std::string &value);
+    void add(const std::string &key, const char *value) { add(key, std::string { value }); }
+    void add(const std::string &key, const GooString *value) { add(key, value->toStr()); }
+    void add(const std::string &key, const int &value) { add(key, std::to_string(value)); }
+    void add(const std::string &key, const bool &value) { add(key, std::string { value ? "yes" : "no" }); }
+    void addKey(const Object &info, const char *key, const std::string &text);
+    void addKey(const Object &info, const char *key) { addKey(info, key, key); }
+    template<class Transform>
+    void addTransformedKey(const Object &info, const char *key, const std::string &text, Transform format);
+    template<class Transform>
+    void addTransformedKey(const Object &info, const char *key, Transform format)
+    {
+        addTransformedKey(info, key, key, format);
     }
+    void print() const;
+    void print(const UnicodeMap *uMap) const;
+    void printJson() const;
+};
+
+void PdfInfo::add(const std::string &key, const std::string &value)
+{
+    content.emplace_back(key, value);
+}
+
+template<class Transform>
+void PdfInfo::addTransformedKey(const Object &info, const char *key, const std::string &text, Transform format)
+{
+    Object obj = info.getDict()->lookup(key);
+    if (obj.isString()) {
+        add(text, format(obj.getString()));
+    }
+}
+
+void PdfInfo::addKey(const Object &info, const char *key, const std::string &text)
+{
+    Object obj = info.getDict()->lookup(key);
+    if (obj.isString()) {
+        add(text, obj.getString());
+    }
+}
+
+void PdfInfo::print() const
+{
+    for (const auto &[key, value] : content) {
+        std::cout << std::format("{:16} ", key + ':') << value << std::endl;
+    }
+}
+
+void PdfInfo::print(const UnicodeMap *uMap) const
+{
+    for (const auto &[key, value] : content) {
+        std::cout << std::format("{:16} ", key + ':');
+        printStdTextString(value, uMap);
+        std::cout << std::endl;
+    }
+}
+
+// TODO: This is a prototype only
+void PdfInfo::printJson() const
+{
+    std::cout << '{' << std::endl;
+    for (const auto &[key, value] : content) {
+        std::cout << '"' << key << "\": \"" << value << "\"," << std::endl;
+    }
+    std::cout << '}' << std::endl;
 }
 
 static void printInfoString(Dict *infoDict, const char *key, const char *text, const UnicodeMap *uMap)
@@ -151,7 +221,7 @@ static void printInfoString(Dict *infoDict, const char *key, const char *text, c
     }
 }
 
-static void printInfoDate(Dict *infoDict, const char *key, const char *text, const UnicodeMap *uMap)
+static std::string formatInfoDate(const GooString *s)
 {
     int year, mon, day, hour, min, sec, tz_hour, tz_minute;
     char tz;
@@ -159,71 +229,84 @@ static void printInfoDate(Dict *infoDict, const char *key, const char *text, con
     time_t time;
     char buf[256];
 
+    // TODO do something with the timezone info
+    if (parseDateString(s, &year, &mon, &day, &hour, &min, &sec, &tz, &tz_hour, &tz_minute)) {
+        tmStruct.tm_year = year - 1900;
+        tmStruct.tm_mon = mon - 1;
+        tmStruct.tm_mday = day;
+        tmStruct.tm_hour = hour;
+        tmStruct.tm_min = min;
+        tmStruct.tm_sec = sec;
+        tmStruct.tm_wday = -1;
+        tmStruct.tm_yday = -1;
+        tmStruct.tm_isdst = -1;
+        // compute the tm_wday and tm_yday fields
+        time = timegm(&tmStruct);
+        if (time != (time_t)-1) {
+            int offset = (tz_hour * 60 + tz_minute) * 60;
+            if (tz == '-') {
+                offset *= -1;
+            }
+            time -= offset;
+            localtime_r(&time, &tmStruct);
+            strftime(buf, sizeof(buf), "%c %Z", &tmStruct);
+            return buf;
+        } else {
+            return s->toStr();
+        }
+    } else {
+        return s->toStr();
+    }
+}
+
+static std::string formatISODate(const GooString *s)
+{
+    int year, mon, day, hour, min, sec, tz_hour, tz_minute;
+    std::string result;
+    char tz;
+
+    if (parseDateString(s, &year, &mon, &day, &hour, &min, &sec, &tz, &tz_hour, &tz_minute)) {
+        result = std::format("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}", year, mon, day, hour, min, sec);
+        if (tz_hour == 0 && tz_minute == 0) {
+            result += 'Z';
+        } else {
+            result += std::format("{}{:02}", tz, tz_hour);
+            if (tz_minute) {
+                result += std::format(":{:02}", tz_minute);
+            }
+        }
+        return result;
+    } else {
+        return s->toStr();
+    }
+}
+
+static std::string formatBox(const PDFRectangle *box)
+{
+    return std::format("{:8.2f} {:8.2f} {:8.2f} {:8.2f}", box->x1, box->y1, box->x2, box->y2);
+}
+
+// LEGACY
+static void printInfoDate(Dict *infoDict, const char *key, const char *text, const UnicodeMap *uMap)
+{
     Object obj = infoDict->lookup(key);
     if (obj.isString()) {
         fputs(text, stdout);
         const GooString *s = obj.getString();
-        // TODO do something with the timezone info
-        if (parseDateString(s, &year, &mon, &day, &hour, &min, &sec, &tz, &tz_hour, &tz_minute)) {
-            tmStruct.tm_year = year - 1900;
-            tmStruct.tm_mon = mon - 1;
-            tmStruct.tm_mday = day;
-            tmStruct.tm_hour = hour;
-            tmStruct.tm_min = min;
-            tmStruct.tm_sec = sec;
-            tmStruct.tm_wday = -1;
-            tmStruct.tm_yday = -1;
-            tmStruct.tm_isdst = -1;
-            // compute the tm_wday and tm_yday fields
-            time = timegm(&tmStruct);
-            if (time != (time_t)-1) {
-                int offset = (tz_hour * 60 + tz_minute) * 60;
-                if (tz == '-') {
-                    offset *= -1;
-                }
-                time -= offset;
-                localtime_r(&time, &tmStruct);
-                strftime(buf, sizeof(buf), "%c %Z", &tmStruct);
-                fputs(buf, stdout);
-            } else {
-                printTextString(s, uMap);
-            }
-        } else {
-            printTextString(s, uMap);
-        }
+        printStdTextString(formatInfoDate(s), uMap);
         fputc('\n', stdout);
     }
 }
 
 static void printISODate(Dict *infoDict, const char *key, const char *text, const UnicodeMap *uMap)
 {
-    int year, mon, day, hour, min, sec, tz_hour, tz_minute;
-    char tz;
-
     Object obj = infoDict->lookup(key);
     if (obj.isString()) {
         fputs(text, stdout);
         const GooString *s = obj.getString();
-        if (parseDateString(s, &year, &mon, &day, &hour, &min, &sec, &tz, &tz_hour, &tz_minute)) {
-            fprintf(stdout, "%04d-%02d-%02dT%02d:%02d:%02d", year, mon, day, hour, min, sec);
-            if (tz_hour == 0 && tz_minute == 0) {
-                fprintf(stdout, "Z");
-            } else {
-                fprintf(stdout, "%c%02d", tz, tz_hour);
-                if (tz_minute) {
-                    fprintf(stdout, ":%02d", tz_minute);
-                }
-            }
-        } else {
-            printTextString(obj.getString(), uMap);
-        }
+        printStdTextString(formatISODate(s), uMap);
         fputc('\n', stdout);
     }
-}
-
-static void printBox(const char *text, const PDFRectangle *box)
-{
-    printf("%s%8.2f %8.2f %8.2f %8.2f\n", text, box->x1, box->y1, box->x2, box->y2);
 }
 
 static void printIndent(unsigned indent)
@@ -718,10 +801,10 @@ static void printCustomInfo(PDFDoc *doc, const UnicodeMap *uMap)
     }
 }
 
-static void printInfo(PDFDoc *doc, const UnicodeMap *uMap, long long filesize, bool multiPage)
+static void printInfo(PDFDoc *doc, const UnicodeMap *uMap, long long filesize, std::string (*formatDate)(const GooString *), bool multiPage, bool asJson)
 {
+    PdfInfo o;
     Page *page;
-    char buf[256];
     double w, h, wISO, hISO, isoThreshold;
     int pg, i;
     int r;
@@ -729,22 +812,14 @@ static void printInfo(PDFDoc *doc, const UnicodeMap *uMap, long long filesize, b
     // print doc info
     Object info = doc->getDocInfo();
     if (info.isDict()) {
-        printInfoString(info.getDict(), "Title", "Title:           ", uMap);
-        printInfoString(info.getDict(), "Subject", "Subject:         ", uMap);
-        printInfoString(info.getDict(), "Keywords", "Keywords:        ", uMap);
-        printInfoString(info.getDict(), "Author", "Author:          ", uMap);
-        printInfoString(info.getDict(), "Creator", "Creator:         ", uMap);
-        printInfoString(info.getDict(), "Producer", "Producer:        ", uMap);
-        if (isoDates) {
-            printISODate(info.getDict(), "CreationDate", "CreationDate:    ", uMap);
-            printISODate(info.getDict(), "ModDate", "ModDate:         ", uMap);
-        } else if (rawDates) {
-            printInfoString(info.getDict(), "CreationDate", "CreationDate:    ", uMap);
-            printInfoString(info.getDict(), "ModDate", "ModDate:         ", uMap);
-        } else {
-            printInfoDate(info.getDict(), "CreationDate", "CreationDate:    ", uMap);
-            printInfoDate(info.getDict(), "ModDate", "ModDate:         ", uMap);
-        }
+        o.addKey(info, "Title");
+        o.addKey(info, "Subject");
+        o.addKey(info, "Keywords");
+        o.addKey(info, "Author");
+        o.addKey(info, "Creator");
+        o.addKey(info, "Producer");
+        o.addTransformedKey(info, "CreationDate", formatDate);
+        o.addTransformedKey(info, "ModDate", formatDate);
     }
 
     bool hasMetadata = false;
@@ -768,24 +843,24 @@ static void printInfo(PDFDoc *doc, const UnicodeMap *uMap, long long filesize, b
     }
 
     // print metadata info
-    printf("Custom Metadata: %s\n", hasCustom ? "yes" : "no");
-    printf("Metadata Stream: %s\n", hasMetadata ? "yes" : "no");
+    o.add("Custom Metadata", hasCustom);
+    o.add("Metadata Stream", hasMetadata);
 
     // print tagging info
-    printf("Tagged:          %s\n", (doc->getCatalog()->getMarkInfo() & Catalog::markInfoMarked) ? "yes" : "no");
-    printf("UserProperties:  %s\n", (doc->getCatalog()->getMarkInfo() & Catalog::markInfoUserProperties) ? "yes" : "no");
-    printf("Suspects:        %s\n", (doc->getCatalog()->getMarkInfo() & Catalog::markInfoSuspects) ? "yes" : "no");
+    o.add("Tagged", static_cast<bool>(doc->getCatalog()->getMarkInfo() & Catalog::markInfoMarked));
+    o.add("UserProperties", static_cast<bool>(doc->getCatalog()->getMarkInfo() & Catalog::markInfoUserProperties));
+    o.add("Suspects", static_cast<bool>(doc->getCatalog()->getMarkInfo() & Catalog::markInfoSuspects));
 
     // print form info
     switch (doc->getCatalog()->getFormType()) {
     case Catalog::NoForm:
-        printf("Form:            none\n");
+        o.add("Form", "none");
         break;
     case Catalog::AcroForm:
-        printf("Form:            AcroForm\n");
+        o.add("Form", "AcroForm");
         break;
     case Catalog::XfaForm:
-        printf("Form:            XFA\n");
+        o.add("Form", "XFA");
         break;
     }
 
@@ -793,14 +868,13 @@ static void printInfo(PDFDoc *doc, const UnicodeMap *uMap, long long filesize, b
     {
         JSInfo jsInfo(doc, firstPage - 1);
         jsInfo.scanJS(lastPage - firstPage + 1);
-        printf("JavaScript:      %s\n", jsInfo.containsJS() ? "yes" : "no");
+        o.add("JavaScript", jsInfo.containsJS());
     }
 
     // print page count
-    printf("Pages:           %d\n", doc->getNumPages());
+    o.add("Pages", doc->getNumPages());
 
     // print encryption info
-    printf("Encrypted:       ");
     if (doc->isEncrypted()) {
         unsigned char *fileKey;
         CryptAlgorithm encAlgorithm;
@@ -822,30 +896,33 @@ static void printInfo(PDFDoc *doc, const UnicodeMap *uMap, long long filesize, b
             break;
         }
 
-        printf("yes (print:%s copy:%s change:%s addNotes:%s algorithm:%s)\n", doc->okToPrint(true) ? "yes" : "no", doc->okToCopy(true) ? "yes" : "no", doc->okToChange(true) ? "yes" : "no", doc->okToAddNotes(true) ? "yes" : "no",
-               encAlgorithmName);
+        o.add("Encrypted",
+              std::format("yes (print:{} copy:{} change:{} addNotes:{} algorithm:{})", doc->okToPrint(true) ? "yes" : "no", doc->okToCopy(true) ? "yes" : "no", doc->okToChange(true) ? "yes" : "no", doc->okToAddNotes(true) ? "yes" : "no",
+                          encAlgorithmName));
     } else {
-        printf("no\n");
+        o.add("Encrypted", "no");
     }
+
+    std::string pagenumber { "Page " };
+    std::string pagesize;
 
     // print page size
     for (pg = firstPage; pg <= lastPage; ++pg) {
+        if (multiPage) {
+            pagenumber += std::format("{:4} ", pg);
+        }
         w = doc->getPageCropWidth(pg);
         h = doc->getPageCropHeight(pg);
-        if (multiPage) {
-            printf("Page %4d size:  %g x %g pts", pg, w, h);
-        } else {
-            printf("Page size:       %g x %g pts", w, h);
-        }
+        pagesize = std::format("{:g} x {:g} pts", w, h);
         if ((fabs(w - 612) < 1 && fabs(h - 792) < 1) || (fabs(w - 792) < 1 && fabs(h - 612) < 1)) {
-            printf(" (letter)");
+            pagesize += " (letter)";
         } else {
             hISO = sqrt(std::numbers::sqrt2) * 7200 / 2.54;
             wISO = hISO / std::numbers::sqrt2;
             isoThreshold = hISO * 0.003; ///< allow for 0.3% error when guessing conformance to ISO 216, A series
             for (i = 0; i <= 6; ++i) {
                 if ((fabs(w - wISO) < isoThreshold && fabs(h - hISO) < isoThreshold) || (fabs(w - hISO) < isoThreshold && fabs(h - wISO) < isoThreshold)) {
-                    printf(" (A%d)", i);
+                    pagesize += std::format(" (A{})", i);
                     break;
                 }
                 hISO = wISO;
@@ -853,13 +930,9 @@ static void printInfo(PDFDoc *doc, const UnicodeMap *uMap, long long filesize, b
                 isoThreshold /= std::numbers::sqrt2;
             }
         }
-        printf("\n");
+        o.add(pagenumber + "size", pagesize);
         r = doc->getPageRotate(pg);
-        if (multiPage) {
-            printf("Page %4d rot:   %d\n", pg, r);
-        } else {
-            printf("Page rot:        %d\n", r);
-        }
+        o.add(pagenumber + "rot", r);
     }
 
     // print the boxes
@@ -871,39 +944,40 @@ static void printInfo(PDFDoc *doc, const UnicodeMap *uMap, long long filesize, b
                     error(errSyntaxError, -1, "Failed to print boxes for page {0:d}", pg);
                     continue;
                 }
-                sprintf(buf, "Page %4d MediaBox:  ", pg);
-                printBox(buf, page->getMediaBox());
-                sprintf(buf, "Page %4d CropBox:   ", pg);
-                printBox(buf, page->getCropBox());
-                sprintf(buf, "Page %4d BleedBox:  ", pg);
-                printBox(buf, page->getBleedBox());
-                sprintf(buf, "Page %4d TrimBox:   ", pg);
-                printBox(buf, page->getTrimBox());
-                sprintf(buf, "Page %4d ArtBox:    ", pg);
-                printBox(buf, page->getArtBox());
+                pagenumber = std::format("Page {:4} ", pg);
+                o.add(pagenumber + "MediaBox", formatBox(page->getMediaBox()));
+                o.add(pagenumber + "CropBox", formatBox(page->getCropBox()));
+                o.add(pagenumber + "BleedBox", formatBox(page->getBleedBox()));
+                o.add(pagenumber + "TrimBox", formatBox(page->getTrimBox()));
+                o.add(pagenumber + "ArtBox", formatBox(page->getArtBox()));
             }
         } else {
             page = doc->getPage(firstPage);
             if (!page) {
                 error(errSyntaxError, -1, "Failed to print boxes for page {0:d}", firstPage);
             } else {
-                printBox("MediaBox:        ", page->getMediaBox());
-                printBox("CropBox:         ", page->getCropBox());
-                printBox("BleedBox:        ", page->getBleedBox());
-                printBox("TrimBox:         ", page->getTrimBox());
-                printBox("ArtBox:          ", page->getArtBox());
+                o.add("MediaBox", formatBox(page->getMediaBox()));
+                o.add("CropBox", formatBox(page->getCropBox()));
+                o.add("BleedBox", formatBox(page->getBleedBox()));
+                o.add("TrimBox", formatBox(page->getTrimBox()));
+                o.add("ArtBox", formatBox(page->getArtBox()));
             }
         }
     }
 
     // print file size
-    printf("File size:       %lld bytes\n", filesize);
+    o.add("File size", std::format("{} bytes", filesize));
 
     // print linearization info
-    printf("Optimized:       %s\n", doc->isLinearized() ? "yes" : "no");
+    o.add("Optimized", doc->isLinearized());
 
     // print PDF version
-    printf("PDF version:     %d.%d\n", doc->getPDFMajorVersion(), doc->getPDFMinorVersion());
+    o.add("PDF version", std::format("{}.{}", doc->getPDFMajorVersion(), doc->getPDFMinorVersion()));
+
+    if (asJson)
+        o.printJson();
+    else
+        o.print(uMap);
 
     printPdfSubtype(doc, uMap);
 }
@@ -913,6 +987,7 @@ int main(int argc, char *argv[])
     std::unique_ptr<PDFDoc> doc;
     GooString *fileName;
     std::optional<GooString> ownerPW, userPW;
+    std::string (*formatDate)(const GooString *);
     const UnicodeMap *uMap;
     FILE *f;
     bool ok;
@@ -951,6 +1026,8 @@ int main(int argc, char *argv[])
     }
 
     fileName = new GooString(argv[1]);
+
+    formatDate = rawDates ? [](const GooString *s) { return s->toStr(); } : (jsonOutput || isoDates) ? formatISODate : formatInfoDate;
 
     if (textEncName[0]) {
         globalParams->setTextEncoding(textEncName);
@@ -1040,7 +1117,7 @@ int main(int argc, char *argv[])
             lastPage = 1;
         }
 
-        printInfo(doc.get(), uMap, filesize, multiPage);
+        printInfo(doc.get(), uMap, filesize, formatDate, multiPage, jsonOutput);
     }
     exitCode = 0;
 
