@@ -52,6 +52,10 @@
 #include <cms.h>
 #include <cmst.h>
 
+static std::function<char *(const char *, bool, void *)> PasswordFunction;
+static void *PasswordFunctionData;
+static std::function<void(void *)> PasswordFunctionDataDestroy;
+
 /**
  * General name, defined by RFC 3280.
  */
@@ -212,6 +216,13 @@ static char *passwordCallback(PK11SlotInfo * /*slot*/, PRBool /*retry*/, void *a
 
 static void shutdownNss()
 {
+    if (PasswordFunctionDataDestroy) {
+        PasswordFunctionDataDestroy(PasswordFunctionData);
+        PasswordFunctionData = nullptr;
+        PasswordFunctionDataDestroy = nullptr;
+    }
+    PasswordFunction = nullptr;
+
     if (NSS_Shutdown() != SECSuccess) {
         fprintf(stderr, "NSS_Shutdown failed: %s\n", PR_ErrorToString(PORT_GetError(), PR_LANGUAGE_I_DEFAULT));
     }
@@ -684,11 +695,21 @@ std::string NSSSignatureConfiguration::getNSSDir()
     return sNssDir;
 }
 
-static std::function<char *(const char *)> PasswordFunction;
-
 void NSSSignatureConfiguration::setNSSPasswordCallback(const std::function<char *(const char *)> &f)
 {
+    NSSSignatureConfiguration::setNSSPasswordCallbackWithData([f](const char *slot_name, bool, void *) { return f(slot_name); }, nullptr, nullptr);
+}
+
+void NSSSignatureConfiguration::setNSSPasswordCallbackWithData(const std::function<char *(const char *, bool, void *)> &f, void *data, const std::function<void(void *)> &df)
+{
+    if (PasswordFunctionDataDestroy) {
+        PasswordFunctionDataDestroy(PasswordFunctionData);
+        PasswordFunctionDataDestroy = nullptr;
+    }
+
     PasswordFunction = f;
+    PasswordFunctionData = data;
+    PasswordFunctionDataDestroy = df;
 }
 
 NSSSignatureVerification::NSSSignatureVerification(std::vector<unsigned char> &&p7data) : p7(std::move(p7data)), CMSMessage(nullptr), CMSSignedData(nullptr), CMSSignerInfo(nullptr)
@@ -1139,11 +1160,11 @@ std::variant<std::vector<unsigned char>, CryptoSign::SigningError> NSSSignatureC
     return signature;
 }
 
-static char *GetPasswordFunction(PK11SlotInfo *slot, PRBool /*retry*/, void * /*arg*/)
+static char *GetPasswordFunction(PK11SlotInfo *slot, PRBool retry, void * /* arg */)
 {
     const char *name = PK11_GetTokenName(slot);
     if (PasswordFunction) {
-        return PasswordFunction(name);
+        return PasswordFunction(name, retry != PR_FALSE, PasswordFunctionData);
     }
     return nullptr;
 }
