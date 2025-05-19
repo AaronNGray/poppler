@@ -44,6 +44,9 @@
 #ifdef ENABLE_NSS3
 #    include "NSSCryptoSignBackend.h"
 #endif
+#ifdef ENABLE_GPGME
+#    include "GPGMECryptoSignBackendConfiguration.h"
+#endif
 #include "CryptoSignBackend.h"
 #include "SignatureInfo.h"
 #include "Win32Console.h"
@@ -147,6 +150,7 @@ static bool printVersion = false;
 static bool printHelp = false;
 static bool printCryptoSignBackends = false;
 static bool dontVerifyCert = false;
+static bool allowPgp = GpgSignatureConfiguration::arePgpSignaturesAllowed();
 static bool noOCSPRevocationCheck = false;
 static bool noAppearance = false;
 static bool dumpSignatures = false;
@@ -174,6 +178,7 @@ static const ArgDesc argDesc[] = { { "-nssdir", argGooString, &nssDir, 0, "path 
                                    { "-sign", argString, &signatureName, 256, "sign the document in the given signature field (by name or number)" },
                                    { "-etsi", argFlag, &etsiCAdESdetached, 0, "create a signature of type ETSI.CAdES.detached instead of adbe.pkcs7.detached" },
                                    { "-backend", argString, &backendString, 256, "use given backend for signing/verification" },
+                                   { "-enable-pgp", argFlag, &allowPgp, 0, "Enable pgp signatures in the GnuPG backend. Only available for GnuPG backend" },
                                    { "-nick", argString, &certNickname, 256, "use the certificate with the given nickname/fingerprint for signing" },
                                    { "-kpw", argString, &password, 256, "password for the signing key (might be missing if the key isn't password protected)" },
                                    { "-digest", argString, &digestName, 256, "name of the digest algorithm (default: SHA256)" },
@@ -282,6 +287,17 @@ static std::string locationToString(KeyLocation location)
     return {};
 }
 
+static const char *typeToString(CertificateType type)
+{
+    switch (type) {
+    case CertificateType::PGP:
+        return "PGP";
+    case CertificateType::X509:
+        return "S/Mime";
+    }
+    return "";
+}
+
 static std::string TextStringToUTF8(const std::string &str)
 {
     const UnicodeMap *utf8Map = globalParams->getUtf8Map();
@@ -340,6 +356,9 @@ int main(int argc, char *argv[])
 #ifdef ENABLE_NSS3
     NSSSignatureConfiguration::setNSSDir(nssDir);
 #endif
+#ifdef ENABLE_GPGME
+    GpgSignatureConfiguration::setPgpSignaturesAllowed(allowPgp);
+#endif
 
     if (listNicknames) {
         bool getCertsError;
@@ -354,7 +373,7 @@ int main(int argc, char *argv[])
                 for (auto &cert : vCerts) {
                     const GooString &nick = cert->getNickName();
                     const auto location = locationToString(cert->getKeyLocation());
-                    printf("%s %s %s\n", nick.c_str(), (cert->isQualified() ? "(*)" : "   "), location.c_str());
+                    printf("%s %s %s %s\n", nick.c_str(), (cert->isQualified() ? "(*)" : "   "), location.c_str(), allowPgp ? typeToString(cert->getCertificateType()) : "");
                 }
             }
         }
